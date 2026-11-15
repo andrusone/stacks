@@ -17,7 +17,7 @@ The `network` repo already runs two of the right tools, so this spec adopts them
 | Need | Adopt | Why | Gap to know about |
 |---|---|---|---|
 | Is it up, does it answer correctly, alert and recover | Gatus: checks written as one YAML file, a built-in status page, history, many alert targets. Already run on the core nodes today; this spec moves them into a stack of their own (HL-OI-2) | the config is text in git, so it can be generated from the health files | no parent and child suppression: it cannot silence dependents when a dependency fails (HL-FR-08) |
-| Host health: processor, memory, disk | Beszel: a small hub and one tiny agent per VM, threshold alerts. Already run on the core nodes today | one small agent per VM, nothing to query | one hub per monitor copy, enrolled by hand |
+| Host health: processor, memory, disk | Beszel: a small hub and one tiny agent per VM, threshold alerts. Already run on the core nodes today | one small agent per VM, nothing to query | one hub, enrolled by hand |
 | Alert delivery to the phone | ntfy: already how the core nodes alert | nothing new to run | the topic name is a secret (HL-NFR-02) |
 | Is the watcher alive | a free outside heartbeat service (for example Healthchecks.io), pinged by the monitor | the only check that survives the whole house being down | an outside service, so nothing private goes in its messages |
 
@@ -45,17 +45,31 @@ All requirements are **P1**, needed for the check of the outcome, except HL-FR-1
 | HL-FR-08 | P1 | **Cause first, no storm.** A dependency that other stacks share alerts once, from its own stack, not once per stack that uses it. When a host dies, the alert for the host comes before the alerts for the answers that depend on it. | Stop `probe-a`: `probe-b`'s dependency answer is down on the page but sends no alert of its own. Stop `probe-a`'s VM: the first alert names the host. |
 | HL-FR-09 | P1 | **The watcher is watched.** If monitoring stops, the owner hears within 15 minutes, by a path that does not go through the machines being monitored. | Stop the monitor: a message arrives within 15 minutes. Start it: a recovery arrives. |
 | HL-FR-10 | P1 | **Unknown is never up.** A check that cannot run, hangs, or has gone silent shows as unknown or down, never as up. | Stop only the host-metrics agent on a VM: the host health shows unknown within 10 minutes, never up. A probe that hangs counts as a failure. |
-| HL-FR-11 | P1 | **The monitor stands first and alone.** The monitor is a stack of its own: its own VMs, two copies on different hypervisors, sharing them with no other service. It is up, with its alert path proven, before any other stack is declared. | With no other stack declared: both copies serve the page, the watcher reports them alive, and a test message reaches the phone. Power off one copy's VM: the other still serves the page and alerts that the first is down. |
+| HL-FR-11 | P1 | **The monitor stands first and alone.** The monitor is a stack of its own: one VM on local Proxmox storage with no other service in it, needing nothing from the NAS or from DNS to run. It is up, with its alert path proven, before any other stack is declared. | With no other stack declared: the page loads and a test message reaches the phone. Then block the VM's access to the NAS and to the core DNS addresses: the page still loads, checks still run, and a test message still reaches the phone. |
 | HL-FR-12 | P2 | **No stack goes up unmonitored.** The deploy command refuses to deploy a stack unless the monitor is up and the stack has its health file. | With the monitor stopped, a deploy of a test stack is refused with a message naming the monitor. With it running and the file present, the deploy proceeds. |
 | HL-FR-13 | P1 | **Config reaches the monitor from git.** A change to a health file changes the running checks within 10 minutes, with nobody logging in to a host. A bad file never blinds the monitor: it keeps its last good checks and an alert says the new file was rejected. | Push a new file: its answers appear within 10 minutes. Push its removal: they go. Push a broken file: the old checks keep running and an alert names the file. |
+| HL-FR-14 | P1 | **Rebuild alone.** If the monitor VM is lost, a new VM, the setup script and the restored hub key bring it back with nothing else touched. The checks return from git by themselves. | Delete the monitor VM. Create a new one from the golden image, run the script, restore the hub key: within 30 minutes the page shows every declared stack and the outside heartbeat is green. No other stack, host or file was changed. |
+| HL-FR-15 | P1 | **No circular dependencies.** The dependencies the health files declare form no cycle, and the monitor appears in none of them. | Two health files that name each other fail `mise run check`, naming both. A health file that lists the monitor as a dependency fails it. |
 | HL-NFR-01 | P1 | **No monitoring software of our own.** Only maintained, existing tools are configured. The only code written for this is the generator from the health files. | A search of the stacks repo finds no monitoring agent or hub source, and the generator is one program. |
 | HL-NFR-02 | P1 | **Secrets stay out.** The phone topic and any token are never in git, in alert text, or on the status page. | A scan of the repos and a sample of alerts find none. |
 
+## Boundaries
+
+What the monitor owns, what it needs and what it never needs. A stack that breaks any of these lines breaks the rebuild-alone promise (HL-FR-14).
+
+| | |
+|---|---|
+| **Owns** | its one VM and the small data on it: the hub key and the short history. Its checks are not owned data: they are generated from git. Its alert topic. |
+| **Needs, hard** | the Proxmox host (compute and local disk) and a network path to what it watches. |
+| **Needs, soft** (it keeps working without them) | the git remote to pull new checks (it keeps its last good checks, HL-FR-13); the phone alert service and the outside heartbeat (an alert path down is itself visible through the other). |
+| **Never needs** | the NAS, the core DNS (checks use addresses), the forge to run, any stack it watches. |
+| **Needed by** | nothing, except one deliberate case: the deploy command refuses to deploy a stack while the monitor is down (HL-FR-12). |
+
 ## Homelab scope
 
-**Context:** about a dozen VMs in one house, read by two people, alerts to one phone; the monitor is two small VMs.
+**Context:** about a dozen VMs in one house, read by two people, alerts to one phone; the monitor is one small VM.
 
-**Safe shortcuts:** a single page, with Gatus's short history and no long-term metrics store or error budgets; checks run every minute; one phone and one topic per monitor copy; a dying host may send several alerts as long as the first names the cause; no on-call, no escalation, no maintenance calendar.
+**Safe shortcuts:** a single page, with Gatus's short history and no long-term metrics store or error budgets; checks run every minute; one phone and one topic; a dying host may send several alerts as long as the first names the cause; no on-call, no escalation, no maintenance calendar.
 
 **Never skipped:** a check that hangs counts as a failure; a silent source is unknown, never up (HL-FR-10); no secret in config, alert or page (HL-NFR-02); the watcher is watched from outside (HL-FR-09); a bad commit never blinds the monitor (HL-FR-13).
 
@@ -68,10 +82,10 @@ The owner decided HL-OI-1 and the order (monitor first) on 2026-11-15. The other
 | ID | Question | Decision |
 |---|---|---|
 | HL-OI-1 | Keep or retire the custom health agent and hub (Vitals)? | **Retired (owner, 2026-11-15).** It was too complex, and Gatus plus Beszel cover the four questions. What is given up: the listener-against-firewall-rule check, the per-name DNS check, and drift, none of which is one of the four questions. Nothing here migrates or removes it, and the `network` repo is not touched. |
-| HL-OI-2 | Where does the monitor run? | As a stack of its own, by the standard pattern: one VM, Docker, one compose file, with Gatus and the Beszel hub in it. Two copies, one on Proxmox and one on TrueNAS, so one hypervisor going down cannot silence both; each watches the other. Checks use addresses, not names, so a DNS failure cannot blind them. The outside heartbeat covers both being down. The core DNS nodes stop being the monitor's host; they are not touched here and keep their old Gatus and Beszel until the owner removes them. Because the monitor must exist before the stack machinery does, the two VMs are made by hand once from the golden image, a bootstrap exception that ends when the stacks outcome can deploy them. |
-| HL-OI-3 | How is the phone told? | ntfy, one topic per monitor copy, on topics separate from the old alerts. The outside heartbeat service emails when pings stop. |
+| HL-OI-2 | Where does the monitor run? | As a stack of its own, by the standard pattern: one VM on local Proxmox storage, Docker, one compose file, with Gatus and the Beszel hub in it. One VM, not two: with both DNS nodes moving onto Proxmox local storage there is no second hypervisor to give independence, so a second copy would only add something to keep in step. The outside heartbeat is the second line: if the monitor or its whole host goes down, the owner hears within 15 minutes (HL-FR-09), and rebuilding takes minutes (HL-FR-14). Checks use addresses, not names, so a DNS failure cannot blind it. The core DNS nodes stop being the monitor host; they are not touched here and keep their old Gatus and Beszel until the owner removes them. Because the monitor must exist before the stack machinery does, the VM is made by hand once from the golden image, a bootstrap exception that ends when the stacks outcome can deploy it. A second copy can be added later if the owner wants one. |
+| HL-OI-3 | How is the phone told? | ntfy, one topic, separate from the old alerts. The outside heartbeat service emails when pings stop. |
 | HL-OI-4 | How does a new VM get a metrics agent? | By whatever creates the VM: the base template once it exists (a template story of the stacks outcome). Until a VM has one, its host answer is online with health unknown, never up (HL-FR-02, HL-FR-10). Nothing here waits for the template. |
-| HL-OI-5 | How do config changes reach the monitor? | Each monitor copy pulls the stacks repo on a timer and regenerates its checks (HL-FR-13). No push, no SSH, no deploy step. |
+| HL-OI-5 | How do config changes reach the monitor? | The monitor pulls the stacks repo on a timer and regenerates its checks (HL-FR-13). No push, no SSH, no deploy step. |
 | HL-OI-6 | The Proxmox host and the NAS? | Left as they are for now: not part of OC8. The owner decides later whether they join the same four answers. |
 | HL-OI-7 | What about stacks that exist today and are installed natively? | They get the same four answers when someone writes a health file for them. OC8's check covers the two test targets only. |
 | HL-OI-8 | The first real stacks, DNS and the forge? | Each declares a health file like any other, so it is watched from its first boot: for DNS the right answer is resolving a known name to its address by asking the stack's own address; for the forge, its web reply and a successful git listing. They are checked in those stacks' own outcomes, not here. |
