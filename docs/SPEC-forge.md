@@ -18,13 +18,17 @@ The forge and its runner are two separate units. Each stands alone.
 
 | | The forge | The runner |
 |---|---|---|
-| **Owns** | the repos, accounts, tokens and pull request history on its one VM and one data folder | nothing worth keeping: it can be recreated and re-registered at any time |
-| **Needs, hard** | the Proxmox host (compute and local disk), a network path to its users | the forge, to receive jobs; the internet, to fetch tools |
-| **Needs, soft** (keeps working without it) | TrueNAS, only as the place the nightly copy goes; the GitHub mirror target; the monitor, which only watches it | nothing |
-| **Never needs** | TrueNAS storage to run, DNS to start, any stack, the monitor, the runner | TrueNAS, the Proxmox API, any secret |
+| **Owns** | the app: its container, config and setup script. Its persistent data (repos, accounts, tokens, pull request history) lives on a TrueNAS share that a new VM can reconnect to | nothing worth keeping: it can be recreated and re-registered at any time |
+| **Needs, hard** | a hypervisor to run on (TrueNAS or Proxmox); the TrueNAS share holding its persistent data and the share its backups go to; a network path to its users | the forge, to receive jobs; the internet, to fetch tools |
+| **Needs, soft** (keeps working without it) | the GitHub mirror target; the monitor, which only watches it | nothing |
+| **Never needs** | DNS to start, any stack, the monitor, the runner | TrueNAS, the Proxmox API, any secret |
 | **Needed by** | every repo's `origin`, every agent, the runner, and the monitor's config pull (which tolerates its absence) | nothing |
 
+TrueNAS needs nothing from the forge, so there is no circle. The forge is a normal service in this respect: its VM is disposable and its data is not, because the data is on TrueNAS.
+
 The one circle to break on purpose: the forge's own setup script lives in a repo that the forge hosts. A rebuild therefore never takes that script from the forge; it takes it from any clone (FG-FR-02).
+
+**Two recoveries, kept apart.** *Reconnect* (the VM is lost, the data is fine): a new VM, the setup script, connect to the persistent data, and the forge is back, even if every backup is lost. *Restore* (the data itself is lost): a restore script rebuilds application state from the backup. TrueNAS is responsible for the bytes (integrity, availability, snapshots, off-site copies); the restore script is responsible for the application being consistent afterwards.
 
 ## Requirements
 
@@ -32,16 +36,17 @@ The one circle to break on purpose: the forge's own setup script lives in a repo
 
 | ID | P | Requirement | Acceptance |
 |---|---|---|---|
-| FG-FR-01 | P1 | **The forge stands alone.** It is one VM on local Proxmox storage with no other service in it, and it needs nothing from TrueNAS to run. | Block the forge VM's access to TrueNAS: cloning, pushing and opening a pull request still work. |
-| FG-FR-02 | P1 | **Rebuild alone, without the forge.** If the forge VM is lost, a new VM, the setup script and the restored data bring it back with nothing else touched. The script and its inputs come from a clone on another machine, never from the forge itself. | Delete the forge VM. Create a new one from the golden image, take the script from a clone on the owner's machine, restore the latest nightly copy. Every repo, pull request and account is present, and the elapsed time is recorded. |
-| FG-FR-03 | P1 | **A nightly copy is on TrueNAS, taken without the forge holding NAS credentials.** TrueNAS fetches it. It restores cleanly. | The newest copy on TrueNAS is under 26 hours old. The rebuild in FG-FR-02 restores from it. A search of the forge VM finds no TrueNAS credential. |
+| FG-FR-01 | P1 | **The forge stands alone.** It is one VM with no other service in it. Its persistent data is on a TrueNAS share, and the forge needs nothing else: no other stack, no DNS to start, not the monitor or the runner. | Stop the monitor, the runner and every other stack: cloning, pushing and opening a pull request still work. |
+| FG-FR-02 | P1 | **Reconnect: rebuild alone, without the forge.** If the forge VM is lost, a new VM, the setup script and a reconnection to the persistent data bring it back with nothing else touched, even if every backup is lost. The script and its inputs come from a clone on another machine, never from the forge itself. | Delete the forge VM. Create a new one, take the script from a clone on the owner's machine, point it at the existing data share. Every repo, pull request and account is present, with backups made unreachable for the drill, and the elapsed time is recorded. |
+| FG-FR-03 | P1 | **Backup: a state-consistent copy is written to a TrueNAS share on a schedule.** A cron job on the forge VM produces it, consistent as an application and not just as files, and writes it to a share. From that handoff TrueNAS is responsible for the bytes. | The newest copy on the share is under 26 hours old. A snapshot of the share exists on TrueNAS. |
+| FG-FR-14 | P1 | **Restore: a script restores application state from the backup.** It is the only thing responsible for the application being consistent after a restore. | Empty the persistent data share, run the restore script on a new VM against the newest backup: every repo, pull request and account is present and a push works. The elapsed time is recorded. |
 | FG-FR-04 | P1 | **The runner is a separate unit.** It is its own VM, registered to the forge, and for each push it runs `mise run check` and reports the result on the branch or pull request. | Push a branch with a passing and a failing check in turn: each shows green and red on the branch within 5 minutes. The runner VM is not the forge VM. |
 | FG-FR-05 | P1 | **The runner can reach the forge and the internet, and nothing else.** It holds no secret and cannot reach TrueNAS or the Proxmox API. It runs code from pushed branches, so it is treated as untrusted. | From the runner VM, a connection to TrueNAS and to the Proxmox API fails. A search of the runner finds no token other than its own registration. Delete the runner and register a new one: jobs run again. |
 | FG-FR-06 | P1 | **Roles are enforced by the forge** (D07). `main` is protected, and only the architect's token merges to it. A builder token can push `st*` branches and the workbench, and cannot push to a product repo's `main`. An operator token reads product repos and writes the workbench. | With each token: a builder push to `main` is refused and to a `st*` branch succeeds; an operator push to a product repo is refused; an architect merge succeeds. |
 | FG-FR-07 | P1 | **Agents switch with one line.** Moving an agent machine to the forge is one change to `FORGE_URL` and a rerun of the machine setup. Nothing in any repo changes. | On the agent machine, change `FORGE_URL`, rerun the setup, start a builder: it claims a story by push, and its evidence lands on the forge. |
 | FG-FR-08 | P1 | **All history moves intact,** in D07's order: the workbench, one pilot repo, then the rest. | For each repo, every branch and tag on the forge has the same commit IDs as the old origin before its `origin` is changed. A fresh clone from the forge has the same `main` commit as the old origin. |
 | FG-FR-09 | P1 | **Watched from the first boot.** The forge and the runner each have a health file, so the four answers show for both and an alert reaches the phone when either goes down. | Stop the forge's container: the service answer goes down and an alert names `forge` within 10 minutes. The same for the runner. |
-| FG-FR-10 | P1 | **No secret in git.** Admin password, runner registration, role tokens and the mirror key live in env files on the machines that use them, never in a repo or in this spec's output. | A scan of every repo and of a sample of the forge's logs finds none. |
+| FG-FR-10 | P1 | **No plaintext secret in git, and no key beside what it opens.** Service secrets are encrypted with SOPS and age in git (D10). Machine credentials (role tokens, the runner's registration, the mirror key) and the owner's age key are never in git; each is in an env file on the one machine that uses it. | A scan of every repo and of a sample of the forge's logs finds no plaintext secret. Every secret file in git is SOPS-encrypted, and no age private key is in git or on the forge's persistent share. |
 | FG-NFR-01 | P1 | **Pinned to the LTS line** (D07). The version is one pinned value, and changing it is the upgrade. | The pin is in one committed place. Changing it and rebuilding gives the new version with the data intact. |
 | FG-FR-11 | P2 (OC7) | **No outside gate.** Agents work without hitting a rate limit or a metered service, and find work by git alone. | Block outbound access to github.com. Run 4 agents for an hour, each claiming and completing stories (claim, push branch, pull request, CI result, review, merge). The forge's log shows zero rate-limit responses and zero metered CI minutes, and no list or poll calls for new work. |
 | FG-FR-12 | P2 (OC7) | **I can leave any host.** | Clone every repo from the forge and push each to a second host (a throwaway GitHub or Codeberg account). Full history lands intact in under an hour with no conversion. |
@@ -54,18 +59,18 @@ The one circle to break on purpose: the forge's own setup script lives in a repo
 
 **Safe shortcuts:** SQLite, not a separate database server; one forge and one runner, no high availability; no email, no single sign-on; the nightly copy, not continuous replication; a Linux runner only, until an outcome ships to Windows (D06); a restore drill instead of a standing standby.
 
-**Never skipped:** `main` is protected and tokens are per role; no secret in git; every clone is a full copy of the history; the runner holds no secret and cannot reach the NAS or Proxmox; the rebuild drill is run, not assumed; the setup script is never fetched from the forge it builds.
+**Never skipped:** `main` is protected and tokens are per role; no plaintext secret in git; every clone is a full copy of the history; the runner holds no secret and cannot reach the NAS or Proxmox; both drills (reconnect and restore) are run, not assumed; the setup script is never fetched from the forge it builds.
 
 **Enterprise habit not to import:** single sign-on and group sync, high availability and a database cluster, audit logging with long retention, and a separate staging forge.
 
 ## Decided items
 
-Each is the architect's default; the owner may change any. Two of them correct text already in D07 and OC6, which the owner should accept or reject.
+Each is the architect's default unless marked owner; the owner may change any.
 
 | ID | Question | Decision |
 |---|---|---|
-| FG-OI-1 | Where does the forge's data live? | On the forge VM's local Proxmox storage. TrueNAS holds the nightly copy only. D07 says "the Forgejo data lives on TrueNAS", which would make the forge run on the NAS; read as the backup location, and the sentence should be amended to say so. |
-| FG-OI-2 | How does the nightly copy get to TrueNAS? | TrueNAS fetches it over SSH, read-only, from a dump the forge writes each night to one local folder. The dump is a consistency point, not a backup system, so D07's "the forge never builds its own backup" still holds; TrueNAS decides retention and off-site copies. |
+| FG-OI-1 | Where does the forge's data live, and where does its VM run? | Owner, 2026-11-15: persistent data lives on TrueNAS, so a new VM can reconnect to it and be back even if backups are lost. The VM runs on TrueNAS or Proxmox; the owner favours TrueNAS for prod-level services, so that is the default. D07's "the Forgejo data lives on TrueNAS" means exactly this and needs no amendment. |
+| FG-OI-2 | How does the backup get to TrueNAS? | Owner, 2026-11-15: a cron job (not TrueNAS) takes a state-consistent backup and writes it to a TrueNAS share. Past that handoff TrueNAS owns byte integrity and availability; the restore script owns application state. D07's "the forge never builds its own backup" is read as: no backup system of its own beyond that handoff, and TrueNAS owns retention and off-site copies. |
 | FG-OI-3 | Database? | SQLite (D07: one container plus a data volume). |
 | FG-OI-4 | Does the runner run on the forge VM? | No. It is its own VM: it executes code from pushed branches, so it must hold no secrets and reach no storage, and it must be rebuildable alone. |
 | FG-OI-5 | What do jobs run in? | The D06 thin Ubuntu image, as a container on the runner VM, so a job sees the same environment as an agent. |
