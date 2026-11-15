@@ -4,9 +4,9 @@
 **Tier:** homelab
 **Status:** proposed 2026-11-15
 
-Every stack answers four questions: is its host online and healthy, are its dependencies online and healthy, is the service online and healthy, and is it giving the right answer. This spec says how a stack declares them, where the answers are shown, and who is told when one turns bad. It replaces the combined dashboard, the drift reporting and the tiered catalog of the `network` repo, which the owner judged too complex (2026-11-15).
+Every stack answers four questions: is its host online and healthy, are its dependencies online and healthy, is the service online and healthy, and is it giving the right answer. This spec says how a stack declares them, where the answers are shown, and who is told when one turns bad. It supersedes the combined dashboard, the drift reporting and the tiered catalog of the `network` repo, which the owner judged too complex and dropped (2026-11-15).
 
-It builds on SK-FR-02 and SK-FR-05 of [SPEC-stacks.md](SPEC-stacks.md): the health check a stack must have is the one defined here.
+It builds on SK-FR-02 and SK-FR-05 of [SPEC-stacks.md](SPEC-stacks.md): the health check a stack must have is the one defined here. It is deliberately small: four answers, one page, one phone, and a watcher that is itself watched.
 
 ## Build or adopt?
 
@@ -21,23 +21,15 @@ The `network` repo already runs two of the right tools, so this spec adopts them
 
 Considered and not chosen: Uptime Kuma (settings live in a database and a UI, not in git, which fights "a stack from a commit"); Prometheus with Alertmanager and Grafana (the usual answer, and far more machinery than four questions need); Zabbix (closest to SCOM in spirit, and just as heavy); Checkmk Raw (the nearest free thing to SCOM, with discovery; the fallback if the adopted tools prove too hand-built). The one program we write is the generator that turns the stack map into Gatus and Beszel configuration.
 
-## What goes
+## Abandoned, not migrated
 
-These are retired by this spec, in the `network` repo. A story marks each old spec superseded and removes what its stack installed.
+The owner has dropped the combined dashboard, drift reporting, the tiered service catalog, the capacity header, and the custom health agent and hub (Vitals). Nothing in this spec carries them forward, maintains them, removes them or edits the `network` repo that holds them. They are simply not part of what is built from here on. While they still run on a host they may raise their own alerts; that is not this spec's concern.
 
-| Retired | Why |
-|---|---|
-| The Dashy dashboard and its generator | the page is Gatus's own status page, which needs no build |
-| The drift ring and every drift check | owner decision: reporting drift is out of scope |
-| The service-health tiers and the catalog file | the four answers replace four tiers of roll-up |
-| The capacity header | it only existed on the dashboard |
-| The custom health agent and hub (Vitals) | decision HL-OI-1 |
-
-Not changed here: the Proxmox host and the NAS keep their current health collectors until the owner decides (HL-OI-6). The core DNS nodes keep running Gatus and Beszel.
+The core DNS nodes keep running Gatus and Beszel, and the Proxmox host and the NAS keep their current health collectors until the owner decides (HL-OI-6).
 
 ## Requirements
 
-Priority: **P1** is needed for the check of the outcome. **P2** follows once it passes. The stack map's `health` entry (HL-FR-06) is the contract.
+All requirements are **P1**, needed for the check of the outcome. The stack map's `health` entry (HL-FR-06) is the contract.
 
 | ID | P | Requirement | Acceptance |
 |---|---|---|---|
@@ -51,8 +43,7 @@ Priority: **P1** is needed for the check of the outcome. **P2** follows once it 
 | HL-FR-08 | P1 | **Cause first, no storm.** A dependency that other stacks share alerts once, from its own stack, not once per stack that uses it. When a host dies, the alert for the host comes before the alerts for the answers that depend on it. | Stop `smoke`: `smoke-b`'s dependency answer is down on the page but sends no alert of its own. Stop `smoke`'s VM: the first alert names the host. |
 | HL-FR-09 | P1 | **The watcher is watched.** If monitoring stops, the owner hears within 15 minutes, by a path that does not go through the machines being monitored. | Stop the monitor: a message arrives within 15 minutes. Start it: a recovery arrives. |
 | HL-FR-10 | P1 | **Unknown is never up.** A check that cannot run, hangs, or has gone silent shows as unknown or down, never as up. | Stop only the host-metrics agent on a VM: the host answer shows unknown within 10 minutes, never up. A probe that hangs counts as a failure. |
-| HL-FR-11 | P2 | **The old reporting is gone.** None of the retired items in "What goes" is running on any host or installed by any stack script, and the old specs are marked superseded. | No host runs the dashboard, a drift check or the custom health agent. The old specs carry a superseded line pointing here. |
-| HL-NFR-01 | P1 | **No monitoring software of our own.** Only maintained, existing tools are configured. The only code written for this is the generator from the stack map. | A search of the repos finds no monitoring agent or hub source, and the generator is one program. |
+| HL-NFR-01 | P1 | **No monitoring software of our own.** Only maintained, existing tools are configured. The only code written for this is the generator from the stack map. | A search of the stacks repo finds no monitoring agent or hub source, and the generator is one program. |
 | HL-NFR-02 | P1 | **Secrets stay out.** The phone topic and any token are never in git, in alert text, or on the status page. | A scan of the repos and a sample of alerts find none. |
 
 ## Homelab scope
@@ -67,11 +58,11 @@ Priority: **P1** is needed for the check of the outcome. **P2** follows once it 
 
 ## Decided items
 
-Each is a default the owner may change. Changing HL-OI-1 changes HL-FR-11 and HL-NFR-01.
+The owner decided HL-OI-1 on 2026-11-15. The others are defaults the owner may change.
 
 | ID | Question | Decision |
 |---|---|---|
-| HL-OI-1 | Keep or retire the custom health agent and hub (Vitals)? | Retire it once the four answers hold on every stack. It is a custom program of 265 files on every VM that the owner judged too complex, and Gatus plus Beszel cover the four questions. What is lost: the listener-against-firewall-rule check, the per-name DNS check, and drift. None of those is one of the four questions. |
+| HL-OI-1 | Keep or retire the custom health agent and hub (Vitals)? | **Retired (owner, 2026-11-15).** It was too complex, and Gatus plus Beszel cover the four questions. What is given up: the listener-against-firewall-rule check, the per-name DNS check, and drift, none of which is one of the four questions. Nothing here migrates or removes it, and the `network` repo is not touched. |
 | HL-OI-2 | Where do the checks run? | On the two core nodes, where Gatus and Beszel already run, as two independent copies. Checks use addresses, not names, so a DNS failure cannot blind them. The outside heartbeat covers the case where both nodes are down. No new VM. |
 | HL-OI-3 | How is the phone told? | ntfy, one topic per node, as the core nodes already do. The outside heartbeat service emails when pings stop. |
 | HL-OI-4 | How is host health collected? | A Beszel agent in the base template, so a new VM has it from its first boot. Everything else is checked from outside by Gatus. |
