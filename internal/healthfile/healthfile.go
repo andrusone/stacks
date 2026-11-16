@@ -149,13 +149,14 @@ func stringValue(add func(int, string, ...any), line int, key, val string) strin
 	return s
 }
 
-// CheckDir checks every *.toml file in dir. It returns how many files have no
-// problem, and every problem, grouped by file in name order and by line within
-// a file. A needs entry must name another file in dir.
-func CheckDir(dir string) (int, []Problem, error) {
+// LoadDir reads every *.toml file in dir. It returns the stacks in ID order,
+// and every problem grouped by file in name order and by line within a file.
+// A needs entry must name another file in dir. A stack with a problem is still
+// returned as far as it could be read; callers decide whether problems stop them.
+func LoadDir(dir string) ([]Stack, []Problem, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 	var names []string
 	ids := map[string]bool{}
@@ -167,12 +168,12 @@ func CheckDir(dir string) (int, []Problem, error) {
 		ids[strings.TrimSuffix(e.Name(), Ext)] = true
 	}
 
-	ok := 0
+	var stacks []Stack
 	var all []Problem
 	for _, n := range names {
 		src, err := os.ReadFile(filepath.Join(dir, n))
 		if err != nil {
-			return 0, nil, err
+			return nil, nil, err
 		}
 		st, probs := Parse(n, string(src))
 		for _, need := range st.Needs {
@@ -184,12 +185,32 @@ func CheckDir(dir string) (int, []Problem, error) {
 				})
 			}
 		}
-		if len(probs) == 0 {
-			ok++
-		}
+		stacks = append(stacks, st)
 		all = append(all, probs...)
 	}
-	return ok, all, nil
+	sort.SliceStable(stacks, func(i, j int) bool { return stacks[i].ID < stacks[j].ID })
+	return stacks, all, nil
+}
+
+// CheckDir checks every *.toml file in dir. It returns how many files have no
+// problem, and every problem, grouped by file in name order and by line within
+// a file. A needs entry must name another file in dir.
+func CheckDir(dir string) (int, []Problem, error) {
+	stacks, probs, err := LoadDir(dir)
+	if err != nil {
+		return 0, nil, err
+	}
+	bad := map[string]bool{}
+	for _, p := range probs {
+		bad[p.File] = true
+	}
+	ok := 0
+	for _, st := range stacks {
+		if !bad[st.ID+Ext] {
+			ok++
+		}
+	}
+	return ok, probs, nil
 }
 
 // stripComment removes a trailing # comment that is outside double quotes.

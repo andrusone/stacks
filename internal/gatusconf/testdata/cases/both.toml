@@ -1,0 +1,7 @@
+# Both expectations: a status and a text, and one need.
+host = "both"
+service = "both:8443"
+request = "https://both:8443/health"
+expect_status = 204
+expect_text = "all good"
+needs = ["quote"]

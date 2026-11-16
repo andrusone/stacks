@@ -1,0 +1,97 @@
+# Gatus config, generated from the health files (HL-FR-06). Do not edit: change the health files.
+# Gatus fills ${NTFY_URL} and ${NTFY_TOPIC} from its environment (HL-NFR-02).
+
+alerting:
+  ntfy:
+    url: "${NTFY_URL}"
+    topic: "${NTFY_TOPIC}"
+
+endpoints:
+  # both
+  - name: "host"
+    group: "both"
+    url: "icmp://both"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "both: host"
+  - name: "dependencies (quote)"
+    group: "both"
+    url: "tcp://quote:9000"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "both: dependencies (quote)"
+  - name: "service"
+    group: "both"
+    url: "tcp://both:8443"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "both: service"
+  - name: "right answer"
+    group: "both"
+    url: "https://both:8443/health"
+    interval: 10s
+    conditions:
+      - "[STATUS] == 204"
+      - "[BODY] == pat(*all good*)"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "both: right answer"
+  # quote
+  - name: "host"
+    group: "quote"
+    url: "icmp://quote"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "quote: host"
+  # quote: no dependencies declared, so its dependencies answer is n/a
+  - name: "service"
+    group: "quote"
+    url: "tcp://quote:9000"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "quote: service"
+  - name: "right answer"
+    group: "quote"
+    url: "http://quote:9000/"
+    interval: 10s
+    conditions:
+      - "[BODY] == pat(*it's \\o/*)"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "quote: right answer"

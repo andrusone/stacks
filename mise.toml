@@ -2,5 +2,5 @@
 go = "1.26"
 
 [tasks.check]
-description = "The repo contract (D06): vet, test, then the health files (HL-FR-06)"
-run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health"]
+description = "The repo contract (D06): vet, test, then the health files (HL-FR-06) and their generated Gatus config"
+run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health"]

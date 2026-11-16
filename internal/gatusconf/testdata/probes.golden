@@ -1,0 +1,96 @@
+# Gatus config, generated from the health files (HL-FR-06). Do not edit: change the health files.
+# Gatus fills ${NTFY_URL} and ${NTFY_TOPIC} from its environment (HL-NFR-02).
+
+alerting:
+  ntfy:
+    url: "${NTFY_URL}"
+    topic: "${NTFY_TOPIC}"
+
+endpoints:
+  # probe-a
+  - name: "host"
+    group: "probe-a"
+    url: "icmp://probe-a"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "probe-a: host"
+  # probe-a: no dependencies declared, so its dependencies answer is n/a
+  - name: "service"
+    group: "probe-a"
+    url: "tcp://probe-a:8080"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "probe-a: service"
+  - name: "right answer"
+    group: "probe-a"
+    url: "http://probe-a:8080/"
+    interval: 10s
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "probe-a: right answer"
+  # probe-b
+  - name: "host"
+    group: "probe-b"
+    url: "icmp://probe-b"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "probe-b: host"
+  - name: "dependencies (probe-a)"
+    group: "probe-b"
+    url: "tcp://probe-a:8080"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "probe-b: dependencies (probe-a)"
+  - name: "service"
+    group: "probe-b"
+    url: "tcp://probe-b:8080"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "probe-b: service"
+  - name: "right answer"
+    group: "probe-b"
+    url: "http://probe-b:8080/"
+    interval: 10s
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "probe-b: right answer"

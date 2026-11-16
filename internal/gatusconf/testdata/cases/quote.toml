@@ -1,0 +1,6 @@
+# Expectation text with a single quote and a backslash, which must reach the config quoted.
+host = "quote"
+service = "quote:9000"
+request = "http://quote:9000/"
+expect_text = "it's \o/"
+needs = []
