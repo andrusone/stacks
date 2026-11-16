@@ -5,7 +5,7 @@
 # The pin (image tag) and the settings are the ones in compose/forge/docker-compose.yml
 # (ST66, ST67, ST69); that file is the local rung and is not changed here.
 #
-# Data: ${FORGE_DATA} is the folder the TrueNAS share is mounted on (setup.sh, ST77).
+# Data: ${FORGE_DATA} is a folder on the forge VM's second disk, mounted at /data (owner item 30; SQLite on a local disk).
 # The admin user is made once by the init service; a rerun changes nothing.
 # Nothing here is a secret except FORGE_ADMIN_PASSWORD, which lives only in the git-ignored .env.
 
@@ -23,7 +23,6 @@ services:
       FORGEJO__service__DISABLE_REGISTRATION: "true"
       FORGEJO__server__DISABLE_SSH: "true"
       FORGEJO__actions__ENABLED: "true"
-      FORGEJO__server__DOMAIN: ${FORGE_DOMAIN:?set FORGE_DOMAIN in compose/forge-vm/.env}
       FORGEJO__server__ROOT_URL: ${FORGE_URL:?set FORGE_URL in compose/forge-vm/.env}
     volumes:
       - ${FORGE_DATA:?set FORGE_DATA in compose/forge-vm/.env}:/data
