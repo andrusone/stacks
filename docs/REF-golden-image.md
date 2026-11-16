@@ -25,6 +25,6 @@ Docker, the compose plugin, mise, Go. A stack's `setup.sh` installs them (mise f
 3. **Follow the owner's script conventions:** bash with `set -euo pipefail` and a `SCRIPT_VERSION`; run as the normal user, never as root, and call `sudo` itself (refuse a bare root login); idempotent, changing a file or service only when it differs; a read-only `--check` mode that prints `PASS`, `FAIL` or `WARN` per item and exits 1 on any `FAIL`; values taken from environment variables so prompts can be skipped; `--only <stage>` to rerun one part; a clear last line saying what changed.
 4. **ufw may be active.** Open exactly the ports the stack publishes, and say so.
 
-## Open question for the owner (not a blocker for the monitor)
+## Settled by the owner (2026-11-16, item 30): Forgejo's data
 
-Forgejo's data on an SMB share: SQLite databases on cifs/SMB mounts are generally discouraged (file locking and permissions). Whether the forge keeps its live data on `/nas`, or on local disk with the backup written to `/nas`, is the owner's design call. The architect asks it once, when OC6's rung is declared ready.
+Forgejo keeps SQLite on a local block disk, a second disk on the forge VM (iSCSI-backed on TrueNAS, so an ordinary disk to the VM) mounted at `/data`, not on SMB; no Postgres. The backup copy goes to a `/nas/<share>` path.
