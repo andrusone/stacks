@@ -1,12 +1,13 @@
-# Runbook: the monitor on a new Ubuntu Server VM
+# Runbook: the monitor on a new VM
 
 The steps to run the monitor (HL-FR-19) on a fresh VM. On your own computer you need only ssh and scp (both come with OpenSSH) and the git checkout of this repo you already have. Each command says what tool it uses and where it runs.
 
-## 1. Make the VM by hand
+## 1. Make the VM from the golden image
 
-- Create a VM running **Ubuntu Server**, with an SSH user that has **sudo**.
-- Give it a **fixed address** (a static address or a DHCP reservation). Write the address down: you will need it as `MONITOR_BIND`.
-- Install nothing else. The setup script installs the rest.
+Clone a new VM from the golden image and finish it with the image's own `post-clone-server.sh`, which sets the hostname and the static address. The image already has ssh, git, ufw and cifs-utils, so you install none of them. See [REF-golden-image.md](REF-golden-image.md) for what the image gives every VM.
+
+- Write down the **fixed address** that `post-clone-server.sh` set: you will need it as `MONITOR_BIND`.
+- The monitor needs no TrueNAS share, so do not mount one for it.
 
 Connect from your own computer:
 
@@ -70,14 +71,16 @@ The topic is a secret. Do not put it in git, in a file other than `.env`, or in 
 Then run the setup script and the compose command:
 
 ```
-sudo ./setup.sh      # bash, on the VM: checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, sets restart on boot
+./setup.sh      # bash, on the VM, as your normal user (not sudo): it calls sudo itself for each step that needs it; checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, sets restart on boot
 ```
+
+If `ufw` is active on the VM, `setup.sh` opens the two ports, `GATUS_PORT` and `NTFY_PORT`, and prints that it did. If `ufw` is not active, it changes nothing.
 
 ```
 sudo docker compose -f compose/monitor/docker-compose.yml up -d      # docker compose, on the VM
 ```
 
-If you skipped the copy in step 2, `setup.sh` creates `compose/monitor/.env` and exits with status 1. Fill it in and run `sudo ./setup.sh` again.
+If you skipped the copy in step 2, `setup.sh` creates `compose/monitor/.env` and exits with status 1. Fill it in and run `./setup.sh` again.
 
 **Updating the repo later:** on your own computer, run `git bundle create stacks.bundle main` and the `scp` command again. On the VM, inside the existing `stacks` folder, run `git pull ~/stacks.bundle main` (git, on the VM). Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
 
@@ -85,7 +88,7 @@ If you skipped the copy in step 2, `setup.sh` creates `compose/monitor/.env` and
 
 - **The status page:** open `http://<MONITOR_BIND>:<GATUS_PORT>` in a browser (for example `http://192.168.1.50:8081`). Within 2 minutes it lists one target, `starter`, with its answers up: host, service and right answer. (A stack with no declared need has no dependency answer, so the starter shows three.)
 - **The alert service:** `http://<MONITOR_BIND>:<NTFY_PORT>` answers in a browser.
-- **Running it again:** `sudo ./setup.sh` again ends with the line `changes: 0`, because nothing needed changing.
+- **Running it again:** `./setup.sh` again ends with the line `changes: 0`, because nothing needed changing.
 
 ## 4. Your phone, one line
 
