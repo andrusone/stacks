@@ -1,0 +1,37 @@
+# Local Forgejo Actions runner (ST68, FG-FR-04 MVP 1). Run with up.sh and down.sh,
+# not by hand: up.sh registers the runner once and then starts it.
+#
+# The runner is its own container, separate from `forge`, and holds no volume of the
+# forge's data. It joins the forge's Docker network (forge_default, made by compose/forge)
+# so it reaches the forge by name, and it starts job containers through the host's
+# Docker socket. Both are one-machine shortcuts for this rung (see the story's
+# "Left rough on purpose").
+#
+# The pin is the image tag below, in this file only (FG-NFR-01). The job image is pinned
+# in config.yml, one line.
+#
+# State: a bind mount of ./data beside this file (git-ignored), or RUNNER_DATA. It holds
+# the registration (.runner) and nothing else.
+
+services:
+  runner:
+    image: code.forgejo.org/forgejo/runner:13.2.1
+    container_name: runner
+    working_dir: /data
+    # The operator's ids (up.sh sets them), so the .runner file stays the operator's.
+    # group_add lets that user use the Docker socket.
+    user: "${RUNNER_UID:-1000}:${RUNNER_GID:-1000}"
+    group_add:
+      - "${DOCKER_GID:-999}"
+    command: ["/bin/forgejo-runner", "--config", "/etc/forgejo-runner/config.yml", "daemon"]
+    volumes:
+      - ${RUNNER_DATA:-./data}:/data
+      - ./config.yml:/etc/forgejo-runner/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - forge
+
+networks:
+  forge:
+    name: forge_default
+    external: true
