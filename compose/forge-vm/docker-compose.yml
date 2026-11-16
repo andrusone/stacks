@@ -1,0 +1,63 @@
+# The forge VM's Forgejo (FG-FR-15 MVP 2, ST76). Every value that varies is read
+# from compose/forge-vm/.env, copied from .env.example; compose stops and names
+# any variable left empty. Start it with:
+#   docker compose -f compose/forge-vm/docker-compose.yml up -d
+# The pin (image tag) and the settings are the ones in compose/forge/docker-compose.yml
+# (ST66, ST67, ST69); that file is the local rung and is not changed here.
+#
+# Data: ${FORGE_DATA} is the folder the TrueNAS share is mounted on (setup.sh, ST77).
+# The admin user is made once by the init service; a rerun changes nothing.
+# Nothing here is a secret except FORGE_ADMIN_PASSWORD, which lives only in the git-ignored .env.
+
+services:
+  forge:
+    image: codeberg.org/forgejo/forgejo:15
+    container_name: forge
+    restart: unless-stopped
+    environment:
+      # The container's git user takes the VM's ids (the service user setup.sh makes).
+      USER_UID: ${FORGE_UID:?set FORGE_UID in compose/forge-vm/.env}
+      USER_GID: ${FORGE_GID:?set FORGE_GID in compose/forge-vm/.env}
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__server__DISABLE_SSH: "true"
+      FORGEJO__actions__ENABLED: "true"
+      FORGEJO__server__DOMAIN: ${FORGE_DOMAIN:?set FORGE_DOMAIN in compose/forge-vm/.env}
+      FORGEJO__server__ROOT_URL: ${FORGE_URL:?set FORGE_URL in compose/forge-vm/.env}
+    volumes:
+      - ${FORGE_DATA:?set FORGE_DATA in compose/forge-vm/.env}:/data
+    ports:
+      - "${FORGE_BIND:?set FORGE_BIND in compose/forge-vm/.env}:${FORGE_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3000/api/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # One-shot: creates the admin user on first run only. It runs as the same ids as
+  # the forge's git user (USER_UID and USER_GID), so the files it touches stay the forge's.
+  init:
+    image: codeberg.org/forgejo/forgejo:15
+    restart: "no"
+    depends_on:
+      forge:
+        condition: service_healthy
+    user: "${FORGE_UID:?set FORGE_UID in compose/forge-vm/.env}:${FORGE_GID:?set FORGE_GID in compose/forge-vm/.env}"
+    environment:
+      FORGE_ADMIN_USER: ${FORGE_ADMIN_USER:?set FORGE_ADMIN_USER in compose/forge-vm/.env}
+      FORGE_ADMIN_EMAIL: ${FORGE_ADMIN_EMAIL:?set FORGE_ADMIN_EMAIL in compose/forge-vm/.env}
+      FORGE_ADMIN_PASSWORD: ${FORGE_ADMIN_PASSWORD:?set FORGE_ADMIN_PASSWORD in compose/forge-vm/.env}
+    volumes:
+      - ${FORGE_DATA:?set FORGE_DATA in compose/forge-vm/.env}:/data
+    entrypoint: ["/bin/sh", "-c"]
+    # $$ is the shell's variable, so compose leaves it for sh; the password never appears in the file.
+    command:
+      - |
+        if forgejo admin user list | awk -v u="$$FORGE_ADMIN_USER" 'NR > 1 && $$2 == u { found = 1 } END { exit !found }'; then
+          echo "forge-init: user $$FORGE_ADMIN_USER exists, nothing to create"
+        else
+          forgejo admin user create --admin --username "$$FORGE_ADMIN_USER" --email "$$FORGE_ADMIN_EMAIL" --password "$$FORGE_ADMIN_PASSWORD" --must-change-password=false
+          echo "forge-init: user $$FORGE_ADMIN_USER created"
+        fi

@@ -4,3 +4,4 @@ compose/forge/data/
 compose/forge/backup/
 compose/runner/data/
 compose/monitor/.env
+compose/forge-vm/.env
