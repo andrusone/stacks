@@ -108,7 +108,7 @@ The message should arrive on the phone within seconds.
 **Check that it survives a reboot:**
 
 ```
-sudo reboot      # systemd, on the VM
+sudo reboot      # sudo and reboot, on the VM
 ```
 
 Wait about 2 minutes, reconnect with ssh, then check:
