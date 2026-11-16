@@ -219,12 +219,12 @@ window_host() {
   if [ -n "$a1" ] && [ -n "$r1" ] && [ -z "$bad" ]; then
     record host 1 "alert for probe-a host after ${a1}s, recovery after ${r1}s, alerts for probe-a host: $dups, no alert for probe-b host/service/right answer" "$a1"
   else
-    record host 0 "alert after ${a1:-none}s, recovery after ${r1:-none}s, unexpected alerts:${bad:- none}" "${a1:-0}"
+    record host 0 "alert after ${a1:+${a1}s}${a1:-none}, recovery after ${r1:+${r1}s}${r1:-none}, unexpected alerts:${bad:- none}" "${a1:-0}"
   fi
   if [ -n "$a2" ] && [ -n "$r2" ]; then
     record dependency 1 "alert for probe-b dependencies (probe-a) after ${a2}s, recovery after ${r2}s" "$a2"
   else
-    record dependency 0 "alert after ${a2:-none}s, recovery after ${r2:-none}s" "${a2:-0}"
+    record dependency 0 "alert after ${a2:+${a2}s}${a2:-none}, recovery after ${r2:+${r2}s}${r2:-none}" "${a2:-0}"
   fi
 }
 
@@ -249,7 +249,7 @@ window_service() {
   if [ -n "$a" ] && [ -n "$r" ] && [ -z "$bad" ]; then
     record service 1 "alert for probe-a service after ${a}s, recovery after ${r}s, no alert for host answers" "$a"
   else
-    record service 0 "alert after ${a:-none}s, recovery after ${r:-none}s, unexpected alerts:${bad:- none}" "${a:-0}"
+    record service 0 "alert after ${a:+${a}s}${a:-none}, recovery after ${r:+${r}s}${r:-none}, unexpected alerts:${bad:- none}" "${a:-0}"
   fi
 }
 
@@ -274,7 +274,7 @@ window_right() {
   if [ -n "$a" ] && [ -n "$r" ] && [ -z "$bad" ]; then
     record right-answer 1 "alert for probe-a right answer after ${a}s, recovery after ${r}s, no other alerts" "$a"
   else
-    record right-answer 0 "alert after ${a:-none}s, recovery after ${r:-none}s, unexpected alerts:${bad:- none}" "${a:-0}"
+    record right-answer 0 "alert after ${a:+${a}s}${a:-none}, recovery after ${r:+${r}s}${r:-none}, unexpected alerts:${bad:- none}" "${a:-0}"
   fi
 }
 
