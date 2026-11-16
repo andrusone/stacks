@@ -7,14 +7,20 @@
 
 services:
   probe-a:
-    # Stock unprivileged nginx: listens on 8080 as a non-root user.
+    # Stock unprivileged nginx: listens on 8080 as a non-root user. nginx runs in
+    # the background and the container keeps running after it (ST59): stopping
+    # nginx leaves the container, and so the host answer, up.
     image: nginxinc/nginx-unprivileged:stable-alpine
+    init: true
+    command: ["sh", "-c", "nginx && exec tail -f /dev/null"]
     volumes:
       - ./probe/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./probe/probe-a:/usr/share/nginx/html:ro
 
   probe-b:
     image: nginxinc/nginx-unprivileged:stable-alpine
+    init: true
+    command: ["sh", "-c", "nginx && exec tail -f /dev/null"]
     volumes:
       - ./probe/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./probe/probe-b:/usr/share/nginx/html:ro
