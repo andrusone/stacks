@@ -14,7 +14,7 @@ mkdir -p data
 "${compose[@]}" up -d
 
 for _ in $(seq 60); do
-  if curl -fsS -o /dev/null "$url/api/healthz"; then
+  if curl -fsS -o /dev/null "$url/api/healthz" 2>/dev/null; then
     break
   fi
   sleep 1
