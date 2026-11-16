@@ -1,0 +1,6 @@
+host = "probe-b"
+service = "probe-b:8080"
+request = "http://probe-b:8080/"
+expect_status = 200
+colour = "red"
+needs = ["probe-a"]
