@@ -1,0 +1,46 @@
+# Local monitor on a real VM (HL-FR-19, ST73): Gatus, ntfy and one throwaway
+# target, starter. Every value that varies is read from compose/monitor/.env,
+# copied from .env.example; compose stops and names any variable left empty.
+# Start it with:
+#   docker compose -f compose/monitor/docker-compose.yml up -d
+# Gatus reads ${MONITOR_DIR}/gatus/config.yaml, written once from the health
+# files by the setup script (ST74). Nothing here is a secret (HL-NFR-02).
+
+services:
+  starter:
+    # Stock unprivileged nginx, as compose/docker-compose.yml: listens on 8080
+    # as a non-root user. nginx runs in the background and the container stays up.
+    image: nginxinc/nginx-unprivileged:stable-alpine
+    init: true
+    restart: unless-stopped
+    command: ["sh", "-c", "nginx && exec tail -f /dev/null"]
+    volumes:
+      - ./starter/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./starter/html:/usr/share/nginx/html:ro
+
+  ntfy:
+    image: binwiederhier/ntfy
+    command: serve
+    restart: unless-stopped
+    environment:
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+    volumes:
+      - ${MONITOR_DIR:?set MONITOR_DIR in compose/monitor/.env}/ntfy:/var/cache/ntfy
+    ports:
+      - "${MONITOR_BIND:?set MONITOR_BIND in compose/monitor/.env}:${NTFY_PORT:?set NTFY_PORT in compose/monitor/.env}:80"
+
+  gatus:
+    image: twinproduction/gatus:latest
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW # the host answer is ICMP
+    volumes:
+      - ${MONITOR_DIR:?set MONITOR_DIR in compose/monitor/.env}/gatus/config.yaml:/config/config.yaml:ro
+    environment:
+      NTFY_URL: http://ntfy:80
+      NTFY_TOPIC: ${NTFY_TOPIC:?set NTFY_TOPIC in compose/monitor/.env}
+    ports:
+      - "${MONITOR_BIND:?set MONITOR_BIND in compose/monitor/.env}:${GATUS_PORT:?set GATUS_PORT in compose/monitor/.env}:8080"
+    depends_on:
+      - starter
+      - ntfy

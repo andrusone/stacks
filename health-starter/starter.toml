@@ -1,0 +1,8 @@
+# Throwaway target for the monitor's first start (ST73): the starter service
+# of compose/monitor/docker-compose.yml. Its own folder, so the two probe files
+# of health/ (which name containers this compose file does not have) do not show as down.
+host = "starter"
+service = "starter:8080"
+request = "http://starter:8080/"
+expect_status = 200
+needs = []
