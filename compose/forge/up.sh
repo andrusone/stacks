@@ -11,7 +11,9 @@ pass_file=data/admin.password
 url=http://127.0.0.1:3000
 
 mkdir -p data
-export FORGE_UID="$(id -u)" FORGE_GID="$(id -g)"
+FORGE_UID="$(id -u)"
+FORGE_GID="$(id -g)"
+export FORGE_UID FORGE_GID
 "${compose[@]}" up -d
 
 for _ in $(seq 60); do
