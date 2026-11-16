@@ -1,6 +1,15 @@
 [tools]
 go = "1.26"
+shellcheck = "0.11.0"
 
 [tasks.check]
-description = "The repo contract (D06): vet, test, then the health files (HL-FR-06) and their generated Gatus config"
-run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health"]
+description = "The repo contract (D06): vet, test, the health files (HL-FR-06) and their generated Gatus config, and shellcheck on the monitor scripts"
+run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health", "shellcheck compose/up.sh compose/down.sh"]
+
+[tasks.monitor-up]
+description = "Bring up the local monitor (Gatus, ntfy, two probes) with Docker"
+run = "bash compose/up.sh"
+
+[tasks.monitor-down]
+description = "Remove the local monitor and everything it made"
+run = "bash compose/down.sh"
