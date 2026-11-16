@@ -13,6 +13,10 @@ services:
     image: codeberg.org/forgejo/forgejo:15
     container_name: forge
     environment:
+      # The container's git user takes the operator's ids (up.sh sets them), so
+      # the files it writes to the data folder are the operator's own.
+      USER_UID: "${FORGE_UID:-1000}"
+      USER_GID: "${FORGE_GID:-1000}"
       FORGEJO__database__DB_TYPE: sqlite3
       FORGEJO__security__INSTALL_LOCK: "true"
       FORGEJO__service__DISABLE_REGISTRATION: "true"
