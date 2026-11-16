@@ -409,7 +409,19 @@ findmnt /data      # findmnt, on the new forge VM: must print the disk with FSTY
 ```
 
 4. **Get the repo and the env file.** Send the repo as in section 2 (the bundle is made on your own computer; the forge's own copy is gone and must not be used). Fill in `compose/forge-vm/.env` again from the table in section 4a. `FORGE_UID` and `FORGE_GID` must be the same as before, because the files on the disk belong to those ids. `FORGE_ADMIN_PASSWORD` is used only if the admin user does not exist yet, so the same value is fine if you kept it, or a new one if you did not.
-5. **Set up and start**, as in section 4b and 4c, each command in its own block, on the new forge VM:```cd stacks      # cd, on the new forge VM``````./compose/forge-vm/setup.sh      # bash, on the new forge VM, as the normal user (it calls sudo itself)``````sudo docker compose -f compose/forge-vm/docker-compose.yml up -d      # docker compose, on the new forge VM```
+5. **Set up and start**, as in section 4b and 4c, each command in its own block, on the new forge VM:
+
+```
+cd stacks      # cd, on the new forge VM
+```
+
+```
+./compose/forge-vm/setup.sh      # bash, on the new forge VM, as the normal user (it calls sudo itself)
+```
+
+```
+sudo docker compose -f compose/forge-vm/docker-compose.yml up -d      # docker compose, on the new forge VM
+```
 
 **What you should see:** `FORGE_URL` shows the forge with every repo, pull request and account as they were. Log in as `FORGE_ADMIN_USER`. Record how long it took.
 
