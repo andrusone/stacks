@@ -1,0 +1,42 @@
+# Local monitor for OC8's Check (ST58): Gatus, ntfy and two probe containers.
+# Run with compose/up.sh and compose/down.sh, not by hand: up.sh writes
+# compose/gatus/config.yaml (git-ignored) from the health files first.
+#
+# NTFY_TOPIC=oc8-local is a throwaway local topic for this test machine. It is
+# not a secret. The real phone topic never goes in git (HL-NFR-02).
+
+services:
+  probe-a:
+    # Stock unprivileged nginx: listens on 8080 as a non-root user.
+    image: nginxinc/nginx-unprivileged:stable-alpine
+    volumes:
+      - ./probe/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./probe/probe-a:/usr/share/nginx/html:ro
+
+  probe-b:
+    image: nginxinc/nginx-unprivileged:stable-alpine
+    volumes:
+      - ./probe/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./probe/probe-b:/usr/share/nginx/html:ro
+
+  ntfy:
+    image: binwiederhier/ntfy
+    command: serve
+    ports:
+      - "127.0.0.1:8090:80"
+
+  gatus:
+    image: twinproduction/gatus:latest
+    cap_add:
+      - NET_RAW # the host answer is ICMP
+    volumes:
+      - ./gatus/config.yaml:/config/config.yaml:ro
+    environment:
+      NTFY_URL: http://ntfy:80
+      NTFY_TOPIC: oc8-local
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      - probe-a
+      - probe-b
+      - ntfy
