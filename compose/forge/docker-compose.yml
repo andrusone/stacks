@@ -1,0 +1,25 @@
+# Local Forgejo for OC6's Check (ST66, FG-FR-02 MVP 1). Run with compose/forge/up.sh
+# and compose/forge/down.sh, not by hand: up.sh creates the admin user on first run.
+#
+# The pin is the image tag below, in this file only (FG-NFR-01). Changing it and
+# rebuilding is the upgrade; the data folder is kept.
+#
+# Data: a bind mount of ./data beside this file (git-ignored). It stands for the
+# TrueNAS share in this rung. FORGE_DATA overrides the path. Relative paths are
+# resolved from this file's folder by docker compose.
+
+services:
+  forge:
+    image: codeberg.org/forgejo/forgejo:15
+    container_name: forge
+    environment:
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__server__DISABLE_SSH: "true"
+      FORGEJO__server__DOMAIN: 127.0.0.1
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:3000/
+    volumes:
+      - ${FORGE_DATA:-./data}:/data
+    ports:
+      - "127.0.0.1:3000:3000"
