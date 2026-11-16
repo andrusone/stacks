@@ -1,0 +1,24 @@
+# Runner configuration for the local Forgejo runner (ST68). No secret in this file:
+# the registration lives in the data folder's .runner file.
+
+log:
+  level: info
+  job_level: info
+
+runner:
+  file: .runner
+  capacity: 1
+  timeout: 1h
+  fetch_interval: 2s
+  labels:
+    # The job image: the one pinned line. Workflows say `runs-on: mise`.
+    - "mise:docker://jdxcode/mise:2026.11.9-debian"
+
+container:
+  # Job containers join the forge's network so they reach the forge by name.
+  network: forge_default
+  privileged: false
+  force_pull: false
+
+cache:
+  enabled: false
