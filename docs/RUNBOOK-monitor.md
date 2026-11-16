@@ -1,6 +1,6 @@
 # Runbook: the monitor on a new Ubuntu Server VM
 
-The steps to run the monitor (HL-FR-19) on a fresh VM. Nothing else is needed on your own computer except ssh. Each command says what tool it uses and where it runs.
+The steps to run the monitor (HL-FR-19) on a fresh VM. On your own computer you need only ssh and scp (both come with OpenSSH) and the git checkout of this repo you already have. Each command says what tool it uses and where it runs.
 
 ## 1. Make the VM by hand
 
@@ -14,17 +14,33 @@ Connect from your own computer:
 ssh youruser@192.168.1.50      # ssh, on your own computer (use your VM's address and user)
 ```
 
-## 2. Clone the repo and fill in one file
+## 2. Get the repo onto the VM and fill in one file
 
-Everything below runs on the VM, over that ssh session.
+The repo is private, so the VM cannot clone it and holds no key of yours. Your own computer sends the repo as a bundle: one file that holds the whole repo.
+
+On your own computer, in your local stacks checkout:
 
 ```
-git clone git@github.com:andrusone/stacks.git      # git, on the VM
-cd stacks
-cp compose/monitor/.env.example compose/monitor/.env   # cp, on the VM
+git bundle create stacks.bundle main      # git, on your own computer: packs the main branch into one file
 ```
 
-The VM needs read access to the repo. Use your own key for that (add it to your GitHub account, or use a deploy key); this runbook does not create keys.
+```
+scp stacks.bundle youruser@192.168.1.50:      # scp, on your own computer: copies the file to the VM's home folder
+```
+
+Then, over the ssh session on the VM:
+
+```
+git clone stacks.bundle stacks      # git, on the VM: makes the stacks folder from the bundle
+```
+
+```
+cd stacks      # cd, on the VM
+```
+
+```
+cp compose/monitor/.env.example compose/monitor/.env      # cp, on the VM
+```
 
 Edit the file with `nano` (ships with Ubuntu Server):
 
@@ -55,10 +71,15 @@ Then run the setup script and the compose command:
 
 ```
 sudo ./setup.sh      # bash, on the VM: checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, sets restart on boot
+```
+
+```
 sudo docker compose -f compose/monitor/docker-compose.yml up -d      # docker compose, on the VM
 ```
 
 If you skipped the copy in step 2, `setup.sh` creates `compose/monitor/.env` and exits with status 1. Fill it in and run `sudo ./setup.sh` again.
+
+**Updating the repo later:** on your own computer, run `git bundle create stacks.bundle main` and the `scp` command again. On the VM, inside the existing `stacks` folder, run `git pull ~/stacks.bundle main` (git, on the VM). Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
 
 ## 3. What you should see
 
@@ -68,10 +89,10 @@ If you skipped the copy in step 2, `setup.sh` creates `compose/monitor/.env` and
 
 ## 4. Your phone, one line
 
-Install the **ntfy** app on your phone. Add a subscription with the server `http://<MONITOR_BIND>:<NTFY_PORT>` and the topic `<NTFY_TOPIC>`. To send a test message from any computer on your network with curl:
+Install the **ntfy** app on your phone. Add a subscription with the server `http://<MONITOR_BIND>:<NTFY_PORT>` and the topic `<NTFY_TOPIC>`. To send a test message, from the VM over the ssh session:
 
 ```
-curl -d "hello" http://<MONITOR_BIND>:<NTFY_PORT>/<NTFY_TOPIC>      # curl, on any computer on your network
+curl -d "hello" http://<MONITOR_BIND>:<NTFY_PORT>/<NTFY_TOPIC>      # curl, on the VM
 ```
 
 The message should arrive on the phone within seconds.
@@ -94,6 +115,9 @@ Wait about 2 minutes, reconnect with ssh, then check:
 
 ```
 sudo docker compose -f compose/monitor/docker-compose.yml ps      # docker compose, on the VM: gatus, ntfy and starter should all be "running"
+```
+
+```
 curl -s http://<MONITOR_BIND>:<NTFY_PORT>/v1/health      # curl, on the VM: should print {"healthy":true}
 ```
 
