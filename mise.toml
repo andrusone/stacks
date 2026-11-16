@@ -4,7 +4,7 @@ shellcheck = "0.11.0"
 
 [tasks.check]
 description = "The repo contract (D06): vet, test, the health files (HL-FR-06) and their generated Gatus config, and shellcheck on the monitor scripts"
-run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health", "shellcheck compose/up.sh compose/down.sh compose/prove.sh compose/forge/up.sh compose/forge/down.sh"]
+run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health", "shellcheck compose/up.sh compose/down.sh compose/prove.sh compose/forge/up.sh compose/forge/down.sh compose/forge/backup.sh"]
 
 [tasks.monitor-up]
 description = "Bring up the local monitor (Gatus, ntfy, two probes) with Docker"
@@ -25,3 +25,7 @@ run = "bash compose/forge/up.sh"
 [tasks.forge-down]
 description = "Remove the local Forgejo container and network; keeps the data folder"
 run = "bash compose/forge/down.sh"
+
+[tasks.forge-backup]
+description = "Write a state-consistent copy of the local Forgejo (ST67) to the backup folder, keep the newest 7. Needs forge-up"
+run = "bash compose/forge/backup.sh"
