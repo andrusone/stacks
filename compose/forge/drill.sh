@@ -190,11 +190,13 @@ step_restore() {
   empty_dir "$data" || fail "emptying the data folder failed"
   [ -z "$(ls -A "$data")" ] || fail "the data folder is not empty after emptying"
   bash "$here/restore.sh" || fail "restore.sh failed; the message is in the log below"
-  # The archive holds no admin.password, so the drill sets a new one through the CLI.
+  # The archive holds no admin.password, so the drill sets a new one through the CLI. The
+  # password must not be flagged for change at next login: that makes the API answer 403 to
+  # basic auth (found in the ST71 proof; up.sh passes the same flag).
   local new
   new="$(openssl rand -hex 24)"
   docker exec --user git forge forgejo admin user change-password \
-    --username "$owner" --password "$new" >/dev/null \
+    --username "$owner" --password "$new" --must-change-password=false >/dev/null \
     || fail "admin password reset after the restore failed"
   (umask 077 && printf '%s\n' "$new" > "$data/admin.password")
   verify_smoke
