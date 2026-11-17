@@ -32,7 +32,7 @@ scp stacks.bundle youruser@192.168.1.50:      # scp, on your own computer: copie
 Then, over the ssh session on the VM:
 
 ```
-git clone stacks.bundle stacks      # git, on the VM: makes the stacks folder from the bundle
+git clone -b main stacks.bundle stacks      # git, on the VM: makes the stacks folder from the bundle's main branch (a bundle of main has no HEAD, so name the branch)
 ```
 
 ```
