@@ -18,6 +18,8 @@
 #   the same addresses in DOCKER-USER, through a marked block in /etc/ufw/after.rules. ufw is enabled
 #   last. Where iptables cannot be read, nothing is set and the commands are printed.
 # - systemctl enable docker and ufw; without systemd it prints the command instead.
+# - Health file (FG-FR-09, ST109): writes health/runner.toml with the VM's address (the source of the default
+#   route, so the monitor needs no DNS) unless the file exists; it says commit health/runner.toml. Nothing is committed here.
 # - --check changes nothing and never prompts for sudo (firewall state is read with sudo -n).
 #   --dry-run prints every step and changes nothing. The last line is changes: n.
 # - Last, it says the runner "shows online once started" and asks "Start the runner now? [Y/n]" (yes by
@@ -694,7 +696,46 @@ firewall_step
 boot_enable docker
 boot_enable ufw
 
-# 10. Start the runner (ST96): asks "Start the runner now? [Y/n]" (yes by default). It starts only on an
+# --- the health file (FG-FR-09, ST109) --------------------------------------
+
+HEALTH_FILE="$REPO_DIR/health/runner.toml"
+
+# The VM's address: the source address of the default route (one lookup). Empty when there is none.
+runner_bind() {
+	ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}'
+}
+
+# The file the monitor reads: the same four parts as health/probe-a.toml, and the runner's one need, forge.
+# The port 8081 is the health service in compose/runner-vm/docker-compose.yml.
+health_file_make() {
+	local bind=$1
+	printf '%s\n' \
+		"# The runner's health file (FG-FR-09, ST109): written by compose/runner-vm/setup.sh from the VM's address." \
+		"host = \"$bind\"" \
+		"service = \"$bind:8081\"" \
+		"request = \"http://$bind:8081/\"" \
+		"expect_status = 200" \
+		"needs = [\"forge\"]" > "$HEALTH_FILE"
+}
+
+# An empty address writes nothing: a file with no host would fail the health check (ST108), and no placeholder goes to git.
+health_step() {
+	local bind
+	bind="$(runner_bind || true)"
+	if [ -z "$bind" ]; then
+		echo "health/runner.toml: no address from the default route, so not written"
+	elif [ -f "$HEALTH_FILE" ]; then
+		echo "health/runner.toml: already there, left alone"
+	else
+		change "write health/runner.toml with the address $bind" health_file_make "$bind"
+		echo "commit health/runner.toml: the monitor reads it from git"
+	fi
+}
+
+# 10. The health file (FG-FR-09, ST109).
+health_step
+
+# 11. Start the runner (ST96): asks "Start the runner now? [Y/n]" (yes by default). It starts only on an
 # explicit yes (Enter counts) at a real terminal. --yes, no terminal and --dry-run never start; they print the command.
 start_offer() {
 	local answer="" cmd="sudo docker compose -f $COMPOSE_FILE up -d"
