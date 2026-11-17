@@ -171,8 +171,8 @@ default_for() {
 	local src bridges
 	case "$1" in
 		MONITOR_BIND)
-			src="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
-			bridges="$(ip -o -4 addr show 2>/dev/null | awk '$2 ~ /^(docker|br-)/ {print $4}')"
+			src="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}' || true)"
+			bridges="$(ip -o -4 addr show 2>/dev/null | awk '$2 ~ /^(docker|br-)/ {print $4}' || true)"
 			if [[ -n $src && $src != 172.17.* ]] && ! grep -qF "${src}/" <<< "$bridges"; then
 				echo "$src"
 			fi
@@ -183,6 +183,18 @@ default_for() {
 		GATUS_PORT) echo 8081 ;;
 		NTFY_PORT) echo 8090 ;;
 	esac
+}
+
+# Why a value has no default, on one line. MONITOR_BIND has no default when there is no route tool
+# (ip, from iproute2) or no default route to read the address from.
+no_default_reason() {
+	local why="no usable default-route address (none, or only a Docker bridge such as 172.17.x.x)"
+	if [ "$1" != MONITOR_BIND ]; then
+		echo "$1 has no default here: set it in the environment or in $ENV_FILE"
+		return 0
+	fi
+	command -v ip >/dev/null 2>&1 || why="the route tool ip is missing (package iproute2: sudo apt-get install -y iproute2)"
+	echo "MONITOR_BIND has no default: $why. Run ./setup.sh again and type this machine's address at the prompt (hostname -I prints them; pick the one that is not a Docker bridge), or set MONITOR_BIND in the environment or in $ENV_FILE"
 }
 
 # Settles one value into ENV_VAL. An environment variable of the same name wins, with no prompt.
@@ -202,7 +214,7 @@ settle() {
 	fi
 	[ -n "$answer" ] || answer="$def"
 	if [ -z "$answer" ]; then
-		stop_or_note "$name has no default here: set it in the environment or in $ENV_FILE"
+		stop_or_note "$(no_default_reason "$name")"
 		return 1
 	fi
 	if ! [[ $answer =~ ^[A-Za-z0-9._/:-]+$ ]] || [[ $name == *_PORT && ! $answer =~ ^[0-9]+$ ]]; then
@@ -280,8 +292,17 @@ image_tools_missing() {
 	echo "${missing[*]}"
 }
 
+# The apt package that provides a golden-image tool, when its name differs.
+apt_package() {
+	case "$1" in
+		gpg) echo gnupg ;;
+		ip) echo iproute2 ;;
+		*) echo "$1" ;;
+	esac
+}
+
 preflight() {
-	local image_missing
+	local image_missing tool named="" pkgs=""
 	if [ "$(id -u)" -eq 0 ]; then
 		stop_or_note "run as your normal user, not root: setup.sh calls sudo itself for each step that needs it"
 	fi
@@ -290,7 +311,11 @@ preflight() {
 	fi
 	image_missing="$(image_tools_missing)"
 	if [ -n "$image_missing" ]; then
-		stop_or_note "the golden image should provide these and they are missing: $image_missing. Install them from the image, not from this script"
+		for tool in $image_missing; do
+			named="${named:+$named, }$tool (package $(apt_package "$tool"))"
+			pkgs="${pkgs:+$pkgs }$(apt_package "$tool")"
+		done
+		stop_or_note "the golden image should provide these and they are missing: $named. On any Ubuntu, install them with: sudo apt-get install -y $pkgs. This script installs none of them"
 	fi
 }
 
