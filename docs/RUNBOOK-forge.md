@@ -47,7 +47,7 @@ ssh youruser@192.168.1.60      # ssh, on your own computer: opens a session on t
 From here, every command runs in that ssh session, on the forge VM.
 
 ```
-git clone stacks.bundle stacks      # git, on the forge VM: makes the stacks folder from the bundle
+git clone -b main stacks.bundle stacks      # git, on the forge VM: makes the stacks folder from the bundle's main branch (a bundle of main has no HEAD, so name the branch)
 ```
 
 ```
@@ -200,7 +200,7 @@ ssh youruser@192.168.1.70      # ssh, on your own computer: opens a session on t
 From here, every command runs in that ssh session, on the runner VM.
 
 ```
-git clone stacks.bundle stacks      # git, on the runner VM: makes the stacks folder from the bundle
+git clone -b main stacks.bundle stacks      # git, on the runner VM: makes the stacks folder from the bundle's main branch (a bundle of main has no HEAD, so name the branch)
 ```
 
 ```
