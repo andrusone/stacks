@@ -1,8 +1,7 @@
 # Synthetic runner health file for the ST109 test (documentation address 192.0.2.11).
-# The real health/runner.toml is not written yet: the runner's service endpoint is undecided
-# (see the ST109 evidence). The port here is a fixture, not a real runner endpoint.
+# The same shape setup.sh writes to health/runner.toml; the real file is written on the runner VM.
 host = "192.0.2.11"
-service = "192.0.2.11:8080"
-request = "http://192.0.2.11:8080/"
+service = "192.0.2.11:8081"
+request = "http://192.0.2.11:8081/"
 expect_status = 200
 needs = ["forge"]

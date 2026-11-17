@@ -47,9 +47,9 @@ func TestRunnerFileGivesFourAnswers(t *testing.T) {
 		`name: "runner: dependencies (forge)"`,
 		`url: "tcp://192.0.2.10:3000"`,
 		`name: "runner: service"`,
-		`url: "tcp://192.0.2.11:8080"`,
+		`url: "tcp://192.0.2.11:8081"`,
 		`name: "runner: right answer"`,
-		`url: "http://192.0.2.11:8080/"`,
+		`url: "http://192.0.2.11:8081/"`,
 		`- "[STATUS] == 200"`,
 	}
 	for _, w := range want {

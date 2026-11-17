@@ -246,7 +246,7 @@ The setup script's last lines name the runner and ask `Start the runner now? [Y/
 sudo docker compose -f compose/runner-vm/docker-compose.yml up -d      # docker compose, on the runner VM: starts the runner (the same command the setup script offers)
 ```
 
-**What you should see:** once the runner is started, on the forge's page, under **Settings**, **Actions**, **Runners**, the runner named `RUNNER_NAME` shows as online.
+**What you should see:** once the runner is started, on the forge's page, under **Settings**, **Actions**, **Runners**, the runner named `RUNNER_NAME` shows as online. The first run also writes `health/runner.toml`: commit it to the repo, then open the monitor page and confirm the runner shows (its four answers, `runner: host` and the rest).
 
 ## 7. Test: a green check and a red one
 

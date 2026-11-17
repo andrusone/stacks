@@ -65,3 +65,26 @@ services:
       - ${RUNNER_DATA:?set RUNNER_DATA in compose/runner-vm/.env}:/data
       - ./config.yml:/etc/forgejo-runner/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock
+
+  # The runner's health answer (FG-FR-09, ST109), probed by the monitor at the VM's address on port 8081.
+  # It shares the runner's process namespace, so it can see whether forgejo-runner is running. While it
+  # is, it serves an index file (200); when it is not, the file is removed and "/" answers an error (not 200).
+  health:
+    image: busybox:1.37.0
+    container_name: runner-health
+    restart: unless-stopped
+    pid: "service:runner"
+    depends_on:
+      - runner
+    ports:
+      - "8081:8081"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /www
+        (while true; do
+          if pgrep forgejo-runner >/dev/null 2>&1; then echo ok > /www/index.html; else rm -f /www/index.html; fi
+          sleep 5
+        done) &
+        exec httpd -f -p 8081 -h /www
