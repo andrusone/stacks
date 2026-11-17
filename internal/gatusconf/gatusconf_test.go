@@ -3,7 +3,10 @@ package gatusconf
 import (
 	"flag"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -94,7 +97,7 @@ func TestNoNeedsSaysSo(t *testing.T) {
 		t.Fatalf("no comment for probe-a's missing needs:\n%s", got)
 	}
 	// probe-b has the one dependencies endpoint; probe-a has none of its own.
-	if n := strings.Count(got, `name: "dependencies (`); n != 1 {
+	if n := len(dependencyName.FindAllString(got, -1)); n != 1 {
 		t.Fatalf("want one dependencies endpoint (probe-b's), got %d", n)
 	}
 }
@@ -124,5 +127,121 @@ func TestUnknownNeedIsRefused(t *testing.T) {
 	}
 	if _, err := Generate([]healthfile.Stack{st}); err == nil {
 		t.Fatal("want an error for a need that is not a stack")
+	}
+}
+
+var (
+	dependencyName = regexp.MustCompile(`(?m)^  - name: "[^"]*: dependencies \(`)
+	endpointLine   = regexp.MustCompile(`(?m)^  - name: (".*")\n    group: (".*")$`)
+)
+
+// synthetic is one health file built in a test: its ID and its needs.
+type synthetic struct {
+	id    string
+	needs []string
+}
+
+// The ten stacks of the naming test. The IDs share no text with each other or
+// with the answer names, so a search for one matches only what it should.
+var tenStacks = []synthetic{
+	{"alpha", nil},
+	{"bravo", []string{"alpha"}},
+	{"charlie", []string{"alpha", "bravo"}},
+	{"delta", nil},
+	{"echo", []string{"delta"}},
+	{"foxtrot", []string{"echo", "alpha"}},
+	{"golf", nil},
+	{"hotel", []string{"golf"}},
+	{"india", []string{"hotel", "delta"}},
+	{"juliet", nil},
+}
+
+// Ten health files are written to a temp folder, generated, and the endpoint
+// names read back from the output. Every name is unique and begins with its
+// stack ID, every group is its stack ID, and a case-insensitive substring
+// search (Gatus's search, HL-FR-01) returns exactly the endpoints the input
+// implies. The expected names come from the input, not from the generator.
+func TestNamesUniqueAndSearchable(t *testing.T) {
+	dir := t.TempDir()
+	var want []string
+	for _, s := range tenStacks {
+		src := "host = \"" + s.id + "\"\nservice = \"" + s.id + ":8080\"\nrequest = \"http://" + s.id + ":8080/\"\nexpect_status = 200\nneeds = ["
+		for i, n := range s.needs {
+			if i > 0 {
+				src += ", "
+			}
+			src += "\"" + n + "\""
+		}
+		src += "]\n"
+		if err := os.WriteFile(filepath.Join(dir, s.id+".toml"), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, s.id+": host", s.id+": service", s.id+": right answer")
+		for _, n := range s.needs {
+			want = append(want, s.id+": dependencies ("+n+")")
+		}
+	}
+
+	stacks, probs, err := healthfile.LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(probs) != 0 {
+		t.Fatalf("synthetic files have problems: %v", probs)
+	}
+	got, err := Generate(stacks)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var names []string
+	seen := map[string]bool{}
+	for _, m := range endpointLine.FindAllStringSubmatch(got, -1) {
+		name, err := strconv.Unquote(m[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		group, err := strconv.Unquote(m[2])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seen[name] {
+			t.Fatalf("name %q is not unique", name)
+		}
+		seen[name] = true
+		stack, _, _ := strings.Cut(name, ": ")
+		if !strings.HasPrefix(name, stack+": ") || group != stack {
+			t.Fatalf("name %q in group %q does not begin with its stack", name, group)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	sort.Strings(want)
+	if strings.Join(names, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("endpoints differ\n--- got ---\n%s\n--- want ---\n%s", strings.Join(names, "\n"), strings.Join(want, "\n"))
+	}
+
+	// Each query: a stack ID, an answer name, in both cases.
+	queries := []string{"alpha", "BRAVO", "juliet", "host", "Service", "right answer", "DEPENDENCIES"}
+	for _, q := range queries {
+		var wantHits, gotHits []string
+		for _, n := range want {
+			if strings.Contains(strings.ToLower(n), strings.ToLower(q)) {
+				wantHits = append(wantHits, n)
+			}
+		}
+		for _, n := range names {
+			if strings.Contains(strings.ToLower(n), strings.ToLower(q)) {
+				gotHits = append(gotHits, n)
+			}
+		}
+		sort.Strings(wantHits)
+		sort.Strings(gotHits)
+		if strings.Join(gotHits, "\n") != strings.Join(wantHits, "\n") {
+			t.Fatalf("search %q returned\n%s\nwant\n%s", q, strings.Join(gotHits, "\n"), strings.Join(wantHits, "\n"))
+		}
+		if len(wantHits) == 0 {
+			t.Fatalf("search %q expects no endpoints; the test would prove nothing", q)
+		}
 	}
 }

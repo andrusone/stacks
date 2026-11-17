@@ -6,7 +6,7 @@
 # on exit, Ctrl-C included. Exits 1 if any step fails.
 #
 # Alert shape (read from a real run): title "Gatus: <group>/<name>", message
-# "An alert has been triggered ... description: <group>: <name>" or
+# "An alert has been triggered ... description: <name>" (the name is `<stack>: <answer>`, ST90) or
 # "An alert has been resolved ...".
 set -uo pipefail
 
@@ -28,7 +28,7 @@ PASSED=0
 FAILED=0
 ROWS=()
 BASELINE_NOTE=""
-DEP="probe-b/dependencies (probe-a)"
+DEP="probe-b/probe-b: dependencies (probe-a)"
 
 now() { date +%s; }
 
@@ -206,14 +206,14 @@ window_host() {
     record dependency 0 "could not disconnect probe-a from $NET" 0
     return
   fi
-  wait_for "triggered probe-a/host" "$t0" && a1=$(( $(now) - t0 )) || a1=""
+  wait_for "triggered probe-a/probe-a: host" "$t0" && a1=$(( $(now) - t0 )) || a1=""
   wait_for "triggered $DEP" "$t0" && a2=$(( $(now) - t0 )) || a2=""
   wait_until $(( t0 + SETTLE ))
-  bad=$(seen "$t0" "triggered probe-b/host" "triggered probe-b/service" "triggered probe-b/right answer")
-  dups=$(count "triggered probe-a/host" "$t0")
+  bad=$(seen "$t0" "triggered probe-b/probe-b: host" "triggered probe-b/probe-b: service" "triggered probe-b/probe-b: right answer")
+  dups=$(count "triggered probe-a/probe-a: host" "$t0")
   tu=$(now)
   host_mend
-  wait_for "resolved probe-a/host" "$tu" && r1=$(( $(now) - tu )) || r1=""
+  wait_for "resolved probe-a/probe-a: host" "$tu" && r1=$(( $(now) - tu )) || r1=""
   wait_for "resolved $DEP" "$tu" && r2=$(( $(now) - tu )) || r2=""
 
   if [ -n "$a1" ] && [ -n "$r1" ] && [ -z "$bad" ]; then
@@ -240,12 +240,12 @@ window_service() {
     record service 0 "could not stop nginx in probe-a" 0
     return
   fi
-  wait_for "triggered probe-a/service" "$t0" && a=$(( $(now) - t0 )) || a=""
+  wait_for "triggered probe-a/probe-a: service" "$t0" && a=$(( $(now) - t0 )) || a=""
   wait_until $(( t0 + SETTLE ))
-  bad=$(seen "$t0" "triggered probe-a/host" "triggered probe-b/host" "triggered probe-b/service" "triggered probe-b/right answer")
+  bad=$(seen "$t0" "triggered probe-a/probe-a: host" "triggered probe-b/probe-b: host" "triggered probe-b/probe-b: service" "triggered probe-b/probe-b: right answer")
   tu=$(now)
   service_mend
-  wait_for "resolved probe-a/service" "$tu" && r=$(( $(now) - tu )) || r=""
+  wait_for "resolved probe-a/probe-a: service" "$tu" && r=$(( $(now) - tu )) || r=""
   if [ -n "$a" ] && [ -n "$r" ] && [ -z "$bad" ]; then
     record service 1 "alert for probe-a service after ${a}s, recovery after ${r}s, no alert for host answers" "$a"
   else
@@ -265,12 +265,12 @@ window_right() {
     record right-answer 0 "could not make probe-a answer 500" 0
     return
   fi
-  wait_for "triggered probe-a/right answer" "$t0" && a=$(( $(now) - t0 )) || a=""
+  wait_for "triggered probe-a/probe-a: right answer" "$t0" && a=$(( $(now) - t0 )) || a=""
   wait_until $(( t0 + SETTLE ))
-  bad=$(seen "$t0" "triggered probe-a/host" "triggered probe-a/service" "triggered probe-b/host" "triggered probe-b/service" "triggered probe-b/right answer" "triggered $DEP")
+  bad=$(seen "$t0" "triggered probe-a/probe-a: host" "triggered probe-a/probe-a: service" "triggered probe-b/probe-b: host" "triggered probe-b/probe-b: service" "triggered probe-b/probe-b: right answer" "triggered $DEP")
   tu=$(now)
   right_mend
-  wait_for "resolved probe-a/right answer" "$tu" && r=$(( $(now) - tu )) || r=""
+  wait_for "resolved probe-a/probe-a: right answer" "$tu" && r=$(( $(now) - tu )) || r=""
   if [ -n "$a" ] && [ -n "$r" ] && [ -z "$bad" ]; then
     record right-answer 1 "alert for probe-a right answer after ${a}s, recovery after ${r}s, no other alerts" "$a"
   else

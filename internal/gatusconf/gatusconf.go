@@ -79,9 +79,11 @@ func rightAnswer(st healthfile.Stack) ([]string, error) {
 	return conds, nil
 }
 
-// endpoint writes one Gatus endpoint for a stack: its name within the stack's
+// endpoint writes one Gatus endpoint for a stack: its name, `<stack>: <answer>`
+// (HL-FR-01, so a search by stack or by answer finds it), the stack as its
 // group, the URL to check, the conditions, and the phone alert.
-func endpoint(b *strings.Builder, st healthfile.Stack, name, url string, conds []string) {
+func endpoint(b *strings.Builder, st healthfile.Stack, answer, url string, conds []string) {
+	name := st.ID + ": " + answer
 	fmt.Fprintf(b, "  - name: %s\n", yamlString(name))
 	fmt.Fprintf(b, "    group: %s\n", yamlString(st.ID))
 	fmt.Fprintf(b, "    url: %s\n", yamlString(url))
@@ -95,7 +97,7 @@ func endpoint(b *strings.Builder, st healthfile.Stack, name, url string, conds [
 	b.WriteString("        failure-threshold: 2\n")
 	b.WriteString("        success-threshold: 1\n")
 	b.WriteString("        send-on-resolved: true\n")
-	fmt.Fprintf(b, "        description: %s\n", yamlString(st.ID+": "+name))
+	fmt.Fprintf(b, "        description: %s\n", yamlString(name))
 }
 
 // yamlString quotes s as a YAML double-quoted scalar, escaping the backslash
