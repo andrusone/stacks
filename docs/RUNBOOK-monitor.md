@@ -15,7 +15,7 @@ Connect from your own computer:
 ssh youruser@192.168.1.50      # ssh, on your own computer (use your VM's address and user)
 ```
 
-## 2. Get the repo onto the VM and fill in one file
+## 2. Get the repo onto the VM and answer setup's questions
 
 The repo is private, so the VM cannot clone it and holds no key of yours. Your own computer sends the repo as a bundle: one file that holds the whole repo.
 
@@ -39,48 +39,34 @@ git clone stacks.bundle stacks      # git, on the VM: makes the stacks folder fr
 cd stacks      # cd, on the VM
 ```
 
-```
-cp compose/monitor/.env.example compose/monitor/.env      # cp, on the VM
-```
-
-Edit the file with `nano` (ships with Ubuntu Server):
-
-```
-nano compose/monitor/.env      # nano, on the VM
-```
+There is no file to copy or edit. `setup.sh` asks for the six values below, each with a default: press Enter to accept it. It writes your answers to `compose/monitor/.env`.
 
 The six values:
 
-| Variable | What it means | Example |
+| Variable | What it means | Default |
 |---|---|---|
-| `MONITOR_USER` | The service user that owns the monitor's folders. Leave `monitor` unless you have a reason. | `monitor` |
+| `MONITOR_USER` | The service user that owns the monitor's folders. | `monitor` |
 | `MONITOR_DIR` | The folder where the monitor keeps its state. | `/srv/monitor` |
-| `MONITOR_BIND` | The VM's own address, so your browser and phone can reach the monitor. Required. | `192.168.1.50` (use your VM's address) |
+| `MONITOR_BIND` | The VM's own address, so your browser and phone can reach the monitor. | the VM's address on its network (for example `192.168.1.50`) |
 | `GATUS_PORT` | The port of the status page. | `8081` |
 | `NTFY_PORT` | The port of the alert service. | `8090` |
-| `NTFY_TOPIC` | Your phone's topic: a secret word, never committed to git. Required. | the output of the command below |
-
-Make the topic word with a command that ships with Ubuntu:
-
-```
-openssl rand -hex 8      # openssl, on the VM; copy the output into NTFY_TOPIC
-```
+| `NTFY_TOPIC` | Your phone's topic: a secret word, never committed to git. | a generated word (the script never prints it; section 4 shows how to read it) |
 
 The topic is a secret. Do not put it in git, in a file other than `.env`, or in a message to anyone.
 
 Then run the setup script and the compose command:
 
 ```
-./setup.sh      # bash, on the VM, as your normal user (not sudo): it calls sudo itself for each step that needs it; checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, sets restart on boot
+./setup.sh      # bash, on the VM, as your normal user (not sudo): asks for the six values (Enter accepts each default), then calls sudo itself for each step that needs it; checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, sets restart on boot
 ```
+
+To skip the questions, give a value as an environment variable of the same name, or run `./setup.sh --yes` to take every default.
 
 If `ufw` is active on the VM, `setup.sh` opens the two ports, `GATUS_PORT` and `NTFY_PORT`, and prints that it did. If `ufw` is not active, it changes nothing.
 
 ```
 sudo docker compose -f compose/monitor/docker-compose.yml up -d      # docker compose, on the VM
 ```
-
-If you skipped the copy in step 2, `setup.sh` creates `compose/monitor/.env` and exits with status 1. Fill it in and run `./setup.sh` again.
 
 **Updating the repo later:** on your own computer, run `git bundle create stacks.bundle main` and the `scp` command again. On the VM, inside the existing `stacks` folder, run `git pull ~/stacks.bundle main` (git, on the VM). Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
 
@@ -92,7 +78,7 @@ If you skipped the copy in step 2, `setup.sh` creates `compose/monitor/.env` and
 
 ## 4. Your phone, one line
 
-Install the **ntfy** app on your phone. Add a subscription with the server `http://<MONITOR_BIND>:<NTFY_PORT>` and the topic `<NTFY_TOPIC>`. To send a test message, from the VM over the ssh session:
+Install the **ntfy** app on your phone. Add a subscription with the server `http://<MONITOR_BIND>:<NTFY_PORT>` and the topic `<NTFY_TOPIC>`. To read the topic, over the ssh session on the VM: `grep '^NTFY_TOPIC=' compose/monitor/.env` (grep, on the VM). To send a test message, from the VM over the ssh session:
 
 ```
 curl -d "hello" http://<MONITOR_BIND>:<NTFY_PORT>/<NTFY_TOPIC>      # curl, on the VM

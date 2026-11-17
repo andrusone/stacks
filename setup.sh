@@ -9,10 +9,12 @@
 # - Refuses a bare root login, and stops with a plain message if not Ubuntu (apt). The golden image
 #   provides curl, gpg, sudo and ca-certificates; if one is missing it stops and names it. It
 #   installs none of the baseline's packages (ssh, ufw, cifs-utils, git).
-# - Reads six values from compose/monitor/.env with a plain loop; the file is never sourced. If the
-#   file is missing, copies .env.example to it (mode 600), lists the variables and exits 1 before
-#   anything else. A value that is empty or unset is named and stops the run. The topic value is
-#   never printed.
+# - Settles six values before anything changes: an environment variable of the same name skips its
+#   prompt; else each is asked for with a default (Enter accepts). Defaults: MONITOR_BIND the default
+#   route's source address (never a Docker bridge), NTFY_TOPIC a generated word, the rest fixed. A
+#   stored value is the default on a rerun; --yes takes every default; no answer and no default
+#   stops naming the value. Answers go to compose/monitor/.env (mode 600) when they differ from it.
+#   The topic is never printed.
 # - Installs what mise cannot, each only when missing: the Docker engine and compose plugin from
 #   Docker's apt repository (the signing key must have Docker's published fingerprint), mise at
 #   MISE_VERSION, the service user (system, no login, in the docker group), and $MONITOR_DIR with
@@ -36,9 +38,10 @@ set -euo pipefail
 MISE_VERSION=v2026.11.8
 
 usage() {
-	echo "usage: ./setup.sh [--dry-run | --check]"
+	echo "usage: ./setup.sh [--yes | --dry-run | --check]"
+	echo "  --yes       take every default without asking"
 	echo "  --check     say whether the machine is ready; changes nothing, no sudo prompt"
-	echo "  --dry-run   print every step, change nothing"
+	echo "  --dry-run   print every step with the defaults, change nothing"
 }
 
 usage_error() {
@@ -49,10 +52,12 @@ usage_error() {
 
 DRY_RUN=0
 CHECK=0
+ASSUME_YES=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--dry-run) DRY_RUN=1 ;;
 		--check) CHECK=1 ;;
+		--yes) ASSUME_YES=1 ;;
 		-h | --help)
 			usage
 			exit 0
@@ -82,11 +87,7 @@ RUN_USER="$(id -un)"
 CHANGES=0
 MISSING=()
 declare -A ENV_VAL=()
-MONITOR_USER=""
-MONITOR_DIR=""
-MONITOR_BIND=""
-GATUS_PORT=""
-NTFY_PORT=""
+declare -A STORED=()
 GATUS_DIR=""
 GATUS_CONFIG=""
 
@@ -128,9 +129,10 @@ report() {
 
 # --- the env file ----------------------------------------------------------
 
-# Reads the wanted values with a plain loop. Never sourced, so nothing in it runs.
+# Reads the wanted values from the env file, if there is one, with a plain loop. Never sourced.
 read_env() {
 	local line key value want
+	[ -f "$ENV_FILE" ] || return 0
 	while IFS= read -r line || [ -n "$line" ]; do
 		line="${line%$'\r'}"
 		case "$line" in
@@ -144,6 +146,13 @@ read_env() {
 			fi
 		done
 	done < "$ENV_FILE"
+	for want in "${ENV_KEYS[@]}"; do
+		STORED[$want]="${ENV_VAL[$want]:-}"
+	done
+}
+
+# Sets the script's variables from the six values in ENV_VAL.
+set_globals() {
 	MONITOR_USER="${ENV_VAL[MONITOR_USER]:-}"
 	MONITOR_DIR="${ENV_VAL[MONITOR_DIR]:-}"
 	MONITOR_BIND="${ENV_VAL[MONITOR_BIND]:-}"
@@ -151,6 +160,85 @@ read_env() {
 	NTFY_PORT="${ENV_VAL[NTFY_PORT]:-}"
 	GATUS_DIR="$MONITOR_DIR/gatus"
 	GATUS_CONFIG="$GATUS_DIR/config.yaml"
+}
+
+# The fixed default of a value, or the cheap attempt for MONITOR_BIND (empty when there is none).
+# One default-route lookup. Never an address on a Docker bridge: the default bridge's 172.17.0.0/16,
+# or any address on a docker or br- interface.
+default_for() {
+	local src bridges
+	case "$1" in
+		MONITOR_BIND)
+			src="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+			bridges="$(ip -o -4 addr show 2>/dev/null | awk '$2 ~ /^(docker|br-)/ {print $4}')"
+			if [[ -n $src && $src != 172.17.* ]] && ! grep -qF "${src}/" <<< "$bridges"; then
+				echo "$src"
+			fi
+			;;
+		NTFY_TOPIC) openssl rand -hex 8 ;;
+		MONITOR_USER) echo monitor ;;
+		MONITOR_DIR) echo /srv/monitor ;;
+		GATUS_PORT) echo 8081 ;;
+		NTFY_PORT) echo 8090 ;;
+	esac
+}
+
+# Settles one value into ENV_VAL. An environment variable of the same name wins, with no prompt.
+# Otherwise asks, with the stored or default value as the default; no answer (or no terminal) takes
+# it. The topic is never shown.
+settle() {
+	local name=$1 def answer=""
+	if [ -n "${!name:-}" ]; then
+		ENV_VAL[$name]="${!name}"
+		return 0
+	fi
+	def="${ENV_VAL[$name]:-}"
+	[ -n "$def" ] || def="$(default_for "$name")"
+	if [ "$ASSUME_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+		printf '%s [%s]: ' "$name" "$([ "$name" = NTFY_TOPIC ] && echo hidden || echo "$def")" >&2
+		read -r answer || answer=""
+	fi
+	[ -n "$answer" ] || answer="$def"
+	if [ -z "$answer" ]; then
+		stop_or_note "$name has no default here: set it in the environment or in $ENV_FILE"
+		return 1
+	fi
+	if ! [[ $answer =~ ^[A-Za-z0-9._/:-]+$ ]] || [[ $name == *_PORT && ! $answer =~ ^[0-9]+$ ]]; then
+		stop_or_note "$name: use letters, digits and . _ / : - only (a port: digits only)"
+		return 1
+	fi
+	ENV_VAL[$name]="$answer"
+}
+
+# The env file's text: the template with the settled values filled in, comments kept.
+render_env() {
+	local line key
+	while IFS= read -r line || [ -n "$line" ]; do
+		key="${line%%=*}"
+		if [[ $line == *=* && $key =~ ^[A-Z_]+$ ]]; then
+			echo "$key=${ENV_VAL[$key]}"
+		else
+			echo "$line"
+		fi
+	done < "$ENV_EXAMPLE"
+}
+
+# Writes the env file (mode 600, from mktemp) only when a value differs from the stored one.
+write_env_file() {
+	local tmp name same=1
+	read_env
+	for name in "${ENV_KEYS[@]}"; do
+		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
+		[ "${STORED[$name]:-}" = "${ENV_VAL[$name]}" ] || same=0
+	done
+	if [ -f "$ENV_FILE" ] && [ "$same" -eq 1 ]; then
+		step "$ENV_FILE already has these values"
+		return 0
+	fi
+	tmp="$(mktemp)"
+	render_env > "$tmp"
+	change "write $ENV_FILE (mode 600; the topic is not shown)" install -m 600 "$tmp" "$ENV_FILE"
+	rm -f "$tmp"
 }
 
 # Prints the names of values that are empty or unset, and of ports that are not numbers. Never
@@ -353,10 +441,11 @@ run_check() {
 	fi
 
 	if [ ! -f "$ENV_FILE" ]; then
-		report missing "compose/monitor/.env" "not there; setup.sh copies .env.example to it"
+		report missing "compose/monitor/.env" "not there; ./setup.sh asks for the values and writes it"
 		problems="file"
 	else
 		read_env
+		set_globals
 		problems="$(env_problem_list)"
 		if [ -z "$problems" ]; then
 			report ok "compose/monitor/.env" "every value set"
@@ -441,27 +530,14 @@ step "checkout: $REPO_DIR"
 step "user: $RUN_USER"
 step "mise version (pinned here from workbench/bootstrap/mise.version): $MISE_VERSION"
 
-# 1. The env file. Without it, copy the template and stop before anything else.
-if [ ! -f "$ENV_FILE" ]; then
-	if [ ! -f "$ENV_EXAMPLE" ]; then
-		stop_or_note "missing $ENV_EXAMPLE, the template for the env file"
-		echo "changes: $CHANGES"
-		exit 0
-	fi
-	change "copy $ENV_EXAMPLE to $ENV_FILE (mode 600)" \
-		install -m 600 "$ENV_EXAMPLE" "$ENV_FILE"
-	echo "Fill in these variables in $ENV_FILE, then run ./setup.sh again:"
-	grep -E '^[A-Z_]+=' "$ENV_EXAMPLE" | cut -d= -f1 | sed 's/^/  /'
-	if [ "$DRY_RUN" -eq 1 ]; then
-		echo "[dry-run] stops here: $ENV_FILE has no values yet"
-		echo "changes: $CHANGES"
-		exit 0
-	fi
+# 1. The values: asked for with defaults, then written to the env file if they differ from it.
+if [ ! -f "$ENV_EXAMPLE" ]; then
+	stop_or_note "missing $ENV_EXAMPLE, the template for the env file"
 	echo "changes: $CHANGES"
-	exit 1
+	exit 0
 fi
-
-read_env
+write_env_file
+set_globals
 problems="$(env_problem_list)"
 if [ -n "$problems" ]; then
 	stop_or_note "set these in $ENV_FILE: $problems"
