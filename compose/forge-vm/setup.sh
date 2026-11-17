@@ -491,6 +491,11 @@ if [ "$MODE" = check ] && ! os_is_ubuntu; then
 	MISSING+=("ubuntu")
 fi
 
+# The data disk is checked before any value is asked (ST112): it reads the fixed DATA_MOUNT, not a value.
+if [ "$MODE" != check ]; then
+	need "data disk" "/data is not a separate mounted disk. $FIX_DATA" data_is_mount
+fi
+
 # The values (ST93): settled in memory first (ST105), so the preflight can read them; --check only reads
 # the file and changes nothing.
 if [ "$MODE" = check ]; then
@@ -515,7 +520,9 @@ for package in "${IMAGE_PACKAGES[@]}"; do
 		package_installed "$package"
 done
 if [ "$ENV_PRESENT" -eq 1 ]; then
-	need "data disk" "/data is not a separate mounted disk. $FIX_DATA" data_is_mount
+	if [ "$MODE" = check ]; then
+		need "data disk" "/data is not a separate mounted disk. $FIX_DATA" data_is_mount
+	fi
 	need "FORGE_DATA" "must be /data or a folder under it, without .. : $FORGE_DATA" data_path_ok
 	need "service user id" "user $FORGE_USER already exists with another id; fix it by hand, then rerun" user_id_ok
 fi
