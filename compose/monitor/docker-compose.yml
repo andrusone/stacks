@@ -1,6 +1,7 @@
 # Local monitor on a real VM (HL-FR-19, ST73): Gatus, ntfy and one throwaway
 # target, starter. Every value that varies is read from compose/monitor/.env,
-# copied from .env.example; compose stops and names any variable left empty.
+# which setup.sh writes from the template .env.example; compose stops and names
+# any variable left empty.
 # Start it with:
 #   docker compose -f compose/monitor/docker-compose.yml up -d
 # Gatus reads ${MONITOR_DIR}/gatus/config.yaml, written once from the health
