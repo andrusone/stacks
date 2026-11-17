@@ -28,6 +28,8 @@
 #   says so. If it is inactive, changes nothing and says so.
 # - --check changes nothing and needs no sudo prompt: it lists each item as ok or missing and exits
 #   non-zero if anything is missing. --dry-run prints every step and changes nothing.
+# - Last, it prints the two addresses as "once started" and asks "Start the monitor now? [Y/n]" (yes by
+#   default). It starts the monitor only on a yes at a terminal; --yes, no terminal and --dry-run never do.
 # - Every machine change goes through change(), which --dry-run skips. The last line is changes: n.
 # change() runs the step functions indirectly through "$@", which shellcheck cannot see.
 # shellcheck disable=SC2329
@@ -424,6 +426,39 @@ ufw_listing() {
 	fi
 }
 
+# --- start the monitor -----------------------------------------------------
+
+# Asks "Start the monitor now? [Y/n]" (yes by default). Starts only on an explicit yes (Enter counts)
+# at a real terminal. --yes, no terminal and --dry-run never start; they print the command instead.
+start_offer() {
+	local answer="" cmd="sudo docker compose -f $COMPOSE_FILE up -d"
+	if [ "$DRY_RUN" -eq 1 ]; then
+		echo "[dry-run] would ask: Start the monitor now? [Y/n]; on yes, run from $REPO_DIR: $cmd"
+		return 0
+	fi
+	if [ "$ASSUME_YES" -eq 1 ] || [ ! -t 0 ]; then
+		echo "Not started (--yes or no terminal). To start it, run from $REPO_DIR: $cmd"
+		return 0
+	fi
+	printf 'Start the monitor now? [Y/n] ' >&2
+	read -r answer || answer=""
+	case "$answer" in
+		'' | y | Y | yes | Yes | YES) ;;
+		*)
+			echo "Not started. To start it later, run from $REPO_DIR: $cmd"
+			return 0
+			;;
+	esac
+	CHANGES=$((CHANGES + 1))
+	echo "[change] starting the monitor: $cmd"
+	if (cd "$REPO_DIR" && sudo docker compose -f "$COMPOSE_FILE" up -d); then
+		echo "monitor started: the addresses above now answer"
+	else
+		echo "setup.sh: the monitor did not start (docker printed why above)" >&2
+		return 1
+	fi
+}
+
 # --- --check ---------------------------------------------------------------
 
 run_check() {
@@ -623,10 +658,10 @@ else
 	done
 fi
 
-# 9. What to run next.
+# 9. The addresses apply only once the monitor is started; then offer to start it.
 echo ""
-echo "Start the monitor from $REPO_DIR:"
-echo "  sudo docker compose -f $COMPOSE_FILE up -d"
-echo "Gatus: http://$MONITOR_BIND:$GATUS_PORT   ntfy: http://$MONITOR_BIND:$NTFY_PORT"
+echo "Gatus: http://$MONITOR_BIND:$GATUS_PORT (once started)   ntfy: http://$MONITOR_BIND:$NTFY_PORT (once started)"
+start_status=0
+start_offer || start_status=$?
 echo "changes: $CHANGES"
-exit 0
+exit "$start_status"
