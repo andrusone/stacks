@@ -237,16 +237,16 @@ If a value is missing and there is no terminal to answer at, the script stops be
 Run it once more to see that nothing is left to change:
 
 ```
-./compose/runner-vm/setup.sh      # bash, on the runner VM, as your normal user: a second run; its last line must say changes: 0
+./compose/runner-vm/setup.sh      # bash, on the runner VM, as your normal user: a second run; its last line must say changes: 0 (changes: 1 if you said yes to starting the runner in it)
 ```
 
-Start the runner:
+The setup script's last lines name the runner and ask `Start the runner now? [Y/n]`. Press Enter (or type `y`) to start it there. Answer `n`, or run `./compose/runner-vm/setup.sh --yes`, and it starts nothing; to start it later, run this command:
 
 ```
-sudo docker compose -f compose/runner-vm/docker-compose.yml up -d      # docker compose, on the runner VM: starts the runner
+sudo docker compose -f compose/runner-vm/docker-compose.yml up -d      # docker compose, on the runner VM: starts the runner (the same command the setup script offers)
 ```
 
-**What you should see:** on the forge's page, under **Settings**, **Actions**, **Runners**, the runner named `RUNNER_NAME` shows as online.
+**What you should see:** once the runner is started, on the forge's page, under **Settings**, **Actions**, **Runners**, the runner named `RUNNER_NAME` shows as online.
 
 ## 7. Test: a green check and a red one
 
