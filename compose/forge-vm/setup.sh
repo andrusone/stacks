@@ -27,6 +27,8 @@
 # - --check changes nothing and needs no sudo: it lists each item as ok or missing and exits 1 if any
 #   is missing. --dry-run prints every step and changes nothing. Every machine change goes through
 #   change(), which --dry-run skips. A real run's last line is changes: n.
+# - Last, it prints the forge URL as "once started" and asks "Start the forge now? [Y/n]" (yes by
+#   default). It starts the forge only on a yes at a terminal; --yes, no terminal and --dry-run never do.
 # change() and ensure() run the step functions indirectly through "$@", which shellcheck cannot see.
 # shellcheck disable=SC2329
 # The env values are read by name (${!name}) in settle; shellcheck cannot see that, so SC2034 is off.
@@ -551,10 +553,46 @@ if [ "$MODE" = check ]; then
 	exit 1
 fi
 
-echo "start the forge: sudo docker compose -f $COMPOSE_FILE up -d"
-echo "forge URL: $FORGE_URL"
+# --- start the forge (ST94) -------------------------------------------------
+
+# Asks "Start the forge now? [Y/n]" (yes by default). Starts only on an explicit yes (Enter counts) at a
+# real terminal. --yes, no terminal and --dry-run never start; they print the command instead.
+start_offer() {
+	local answer="" cmd="sudo docker compose -f $COMPOSE_FILE up -d"
+	if [ "$MODE" = dry ]; then
+		echo "[dry-run] would ask: Start the forge now? [Y/n]; on yes, run from $REPO_DIR: $cmd"
+		return 0
+	fi
+	if [ "$ASSUME_YES" -eq 1 ] || [ ! -t 0 ]; then
+		echo "Not started (--yes or no terminal). To start it, run from $REPO_DIR: $cmd"
+		return 0
+	fi
+	printf 'Start the forge now? [Y/n] ' >&2
+	read -r answer || answer=""
+	case "$answer" in
+		'' | y | Y | yes | Yes | YES) ;;
+		*)
+			echo "Not started. To start it later, run from $REPO_DIR: $cmd"
+			return 0
+			;;
+	esac
+	CHANGES=$((CHANGES + 1))
+	echo "[change] starting the forge: $cmd"
+	if (cd "$REPO_DIR" && sudo docker compose -f "$COMPOSE_FILE" up -d); then
+		echo "forge started: the forge URL above now answers"
+	else
+		echo "setup.sh: the forge did not start (docker printed why above)" >&2
+		return 1
+	fi
+}
+
+# The address applies only once the forge is started; then offer to start it.
+echo "forge URL: $FORGE_URL (once started)"
+start_status=0
+start_offer || start_status=$?
 if [ "$MODE" = dry ]; then
 	echo "would change: $CHANGES (dry run: nothing changed)"
 else
 	echo "changes: $CHANGES"
 fi
+exit "$start_status"
