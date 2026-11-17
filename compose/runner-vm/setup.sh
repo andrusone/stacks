@@ -10,7 +10,8 @@
 #   folder, each only when missing.
 # - Settles the values in compose/runner-vm/.env before any other change (ST95): each is asked for with its
 #   default (Enter accepts); an environment variable of the same name skips its prompt; --yes takes every
-#   default; no answer and no default stops naming the value. Addresses must be IPv4 (iptables would refuse
+#   default; when every value is already in .env and valid, none is asked (ST106); no answer and no default
+#   stops naming the value. Addresses must be IPv4 (iptables would refuse
 #   the block). The registration token is typed hidden, or is a file's first line; it is never printed.
 # - Firewall (FG-FR-05, ufw): SSH allowed in if a rule covers it; default deny in, allow out; host
 #   traffic to TRUENAS_ADDR and PROXMOX_ADDR denied on every port; job containers' traffic dropped to
@@ -80,6 +81,7 @@ IMAGE_TOOLS=(curl gpg sudo ufw)
 ENV_KEYS=(RUNNER_USER RUNNER_UID RUNNER_GID RUNNER_DATA RUNNER_NAME FORGE_URL RUNNER_REGISTRATION_TOKEN TRUENAS_ADDR PROXMOX_ADDR)
 
 CHANGES=0
+ALL_STORED=0
 MISSING=()
 FW_UNREAD=0
 SSH_PORT=22
@@ -200,7 +202,7 @@ settle() {
 	else
 		def="${ENV_VAL[$name]:-}"
 		[ -n "$def" ] || def="$(default_for "$name")"
-		if [ "$ASSUME_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ "$CHECK" -eq 0 ]; then
+		if [ "$ASSUME_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ "$CHECK" -eq 0 ] && [ "$ALL_STORED" -eq 0 ]; then
 			if [ "$name" = RUNNER_REGISTRATION_TOKEN ]; then
 				printf '%s (typed, not shown, or a file holding it; Enter keeps the stored one): ' "$name" >&2
 				read -rs answer || answer=""
@@ -235,6 +237,9 @@ render_env() {
 # the stored one. A stop (no answer and no default, a bad value) exits before anything is written.
 write_env_file() {
 	local tmp name same=1
+	# ST106: a .env that already holds every value, each valid, is settled without any prompt.
+	ALL_STORED=1
+	for name in "${ENV_KEYS[@]}"; do valid_answer "$name" "${STORED[$name]:-}" || ALL_STORED=0; done
 	for name in "${ENV_KEYS[@]}"; do
 		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
 		[ "${STORED[$name]:-}" = "${ENV_VAL[$name]}" ] || same=0
