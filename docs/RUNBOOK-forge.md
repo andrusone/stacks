@@ -318,6 +318,8 @@ git push      # git, on the forge VM
 
 5. **Read the red status.** Within 5 minutes, the commit `check: fails` shows a red cross.
 
+If a job fails in seconds with no step log, it is a workflow or action error (a YAML mistake, or `uses:` of an action the runner cannot fetch), which the forge does not name. This test's workflow has no `uses:`, so check the YAML of `.forgejo/workflows/check.yml` first.
+
 6. **Check the runner cannot reach TrueNAS or Proxmox.** Open a second ssh session to the runner VM (`ssh youruser@192.168.1.70`) and run these two commands there (`nc` ships with Ubuntu). Each one must fail: nothing connects, and `nc` returns to the prompt after about 3 seconds with nothing printed.
 
 ```
