@@ -1,0 +1,7 @@
+# Synthetic forge health file for the ST108 test (documentation address 192.0.2.10).
+# The real health/forge.toml is written on the forge VM by compose/forge-vm/setup.sh.
+host = "192.0.2.10"
+service = "192.0.2.10:3000"
+request = "http://192.0.2.10:3000/"
+expect_status = 200
+needs = []

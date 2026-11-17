@@ -50,6 +50,10 @@ func TestFailuresListExactly(t *testing.T) {
 			dir:  "testdata/bad-line",
 			want: []string{`probe-b.toml:5: want key = value`},
 		},
+		{
+			dir:  "testdata/empty-host",
+			want: []string{`probe-b.toml:2: host: empty`},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.dir, func(t *testing.T) {
