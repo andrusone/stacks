@@ -8,7 +8,7 @@ alerting:
 
 endpoints:
   # both
-  - name: "host"
+  - name: "both: host"
     group: "both"
     url: "icmp://both"
     interval: 10s
@@ -20,7 +20,7 @@ endpoints:
         success-threshold: 1
         send-on-resolved: true
         description: "both: host"
-  - name: "dependencies (quote)"
+  - name: "both: dependencies (quote)"
     group: "both"
     url: "tcp://quote:9000"
     interval: 10s
@@ -32,7 +32,7 @@ endpoints:
         success-threshold: 1
         send-on-resolved: true
         description: "both: dependencies (quote)"
-  - name: "service"
+  - name: "both: service"
     group: "both"
     url: "tcp://both:8443"
     interval: 10s
@@ -44,7 +44,7 @@ endpoints:
         success-threshold: 1
         send-on-resolved: true
         description: "both: service"
-  - name: "right answer"
+  - name: "both: right answer"
     group: "both"
     url: "https://both:8443/health"
     interval: 10s
@@ -58,7 +58,7 @@ endpoints:
         send-on-resolved: true
         description: "both: right answer"
   # quote
-  - name: "host"
+  - name: "quote: host"
     group: "quote"
     url: "icmp://quote"
     interval: 10s
@@ -71,7 +71,7 @@ endpoints:
         send-on-resolved: true
         description: "quote: host"
   # quote: no dependencies declared, so its dependencies answer is n/a
-  - name: "service"
+  - name: "quote: service"
     group: "quote"
     url: "tcp://quote:9000"
     interval: 10s
@@ -83,7 +83,7 @@ endpoints:
         success-threshold: 1
         send-on-resolved: true
         description: "quote: service"
-  - name: "right answer"
+  - name: "quote: right answer"
     group: "quote"
     url: "http://quote:9000/"
     interval: 10s
