@@ -1,0 +1,67 @@
+# The runner VM's Forgejo Actions runner (FG-FR-15 MVP 2, ST78). Every value that varies is
+# read from compose/runner-vm/.env, copied from .env.example; compose stops and names any
+# variable left empty. Start it with:
+#   docker compose -f compose/runner-vm/docker-compose.yml up -d
+# The pin (image tag) and the job config are those of compose/runner/ (ST68, MVP 1); that
+# folder is the local rung and is not changed here. config.yml here is a copy with the network changed.
+#
+# Two services. register runs at each up: when /data/.runner does not exist it registers the
+# runner to the forge (once), and when it exists it does nothing. runner starts only after
+# register completed successfully. The registration token is needed for the first registration
+# only; after it, the runner's own key lives in .runner.
+#
+# The runner reaches the forge at ${FORGE_URL} (another VM), so it joins no Docker network of
+# its own. It starts job containers through the VM's Docker socket (as in MVP 1).
+#
+# State: ${RUNNER_DATA}, a folder on the VM, mounted at /data. It holds the registration (.runner)
+# and nothing else.
+
+services:
+  register:
+    image: code.forgejo.org/forgejo/runner:13.2.1
+    restart: "no"
+    working_dir: /data
+    user: "${RUNNER_UID:?set RUNNER_UID in compose/runner-vm/.env}:${RUNNER_GID:?set RUNNER_GID in compose/runner-vm/.env}"
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in compose/runner-vm/.env}"
+    environment:
+      FORGE_URL: ${FORGE_URL:?set FORGE_URL in compose/runner-vm/.env}
+      RUNNER_NAME: ${RUNNER_NAME:?set RUNNER_NAME in compose/runner-vm/.env}
+      # A secret: the one-time token from the forge's page. Passed as an environment value, never printed.
+      RUNNER_REGISTRATION_TOKEN: ${RUNNER_REGISTRATION_TOKEN:-}
+    volumes:
+      - ${RUNNER_DATA:?set RUNNER_DATA in compose/runner-vm/.env}:/data
+      - ./config.yml:/etc/forgejo-runner/config.yml:ro
+    entrypoint: ["/bin/sh", "-c"]
+    # $$ is the shell's variable, so compose leaves it for sh.
+    command:
+      - |
+        if [ -f /data/.runner ]; then
+          echo "register: already registered, nothing to register"
+          exit 0
+        fi
+        if [ -z "$$RUNNER_REGISTRATION_TOKEN" ]; then
+          echo "register: no registration token; put a one-time token from the forge's Settings, Actions, Runners page in compose/runner-vm/.env" >&2
+          exit 1
+        fi
+        /bin/forgejo-runner --config /etc/forgejo-runner/config.yml register --no-interactive --instance "$$FORGE_URL" --token "$$RUNNER_REGISTRATION_TOKEN" --name "$$RUNNER_NAME"
+        echo "register: registered with the forge at $$FORGE_URL"
+
+  runner:
+    image: code.forgejo.org/forgejo/runner:13.2.1
+    container_name: runner
+    restart: unless-stopped
+    working_dir: /data
+    # The service user's ids (setup.sh creates the user), so the .runner file stays that user's.
+    # group_add lets that user use the Docker socket.
+    user: "${RUNNER_UID:?set RUNNER_UID in compose/runner-vm/.env}:${RUNNER_GID:?set RUNNER_GID in compose/runner-vm/.env}"
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in compose/runner-vm/.env}"
+    command: ["/bin/forgejo-runner", "--config", "/etc/forgejo-runner/config.yml", "daemon"]
+    depends_on:
+      register:
+        condition: service_completed_successfully
+    volumes:
+      - ${RUNNER_DATA:?set RUNNER_DATA in compose/runner-vm/.env}:/data
+      - ./config.yml:/etc/forgejo-runner/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
