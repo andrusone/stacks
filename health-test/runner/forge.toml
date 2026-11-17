@@ -1,0 +1,7 @@
+# Synthetic forge health file for the ST109 runner test (documentation address 192.0.2.10).
+# A copy of health-test/forge.toml: the runner's test needs a forge file in the same folder.
+host = "192.0.2.10"
+service = "192.0.2.10:3000"
+request = "http://192.0.2.10:3000/"
+expect_status = 200
+needs = []
