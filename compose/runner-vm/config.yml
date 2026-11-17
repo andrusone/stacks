@@ -15,7 +15,7 @@ runner:
     # The job image: the one pinned line. Workflows say `runs-on: mise`.
     - "mise:docker://jdxcode/mise:2026.11.9-debian"
 
-container:
+  # An empty value: the runner makes a new network for each job. Jobs reach the forge at the forge URL (another VM), so no shared network.
   # Job containers use the VM's default Docker network; they reach the forge at ${FORGE_URL} (another VM), so no shared network.
   network: ""
   privileged: false
