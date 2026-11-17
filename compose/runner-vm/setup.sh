@@ -19,6 +19,8 @@
 # - systemctl enable docker and ufw; without systemd it prints the command instead.
 # - --check changes nothing and never prompts for sudo (firewall state is read with sudo -n).
 #   --dry-run prints every step and changes nothing. The last line is changes: n.
+# - Last, it says the runner "shows online once started" and asks "Start the runner now? [Y/n]" (yes by
+#   default). It starts the runner only on a yes at a terminal; --yes, no terminal and --dry-run never do.
 # change() runs the step functions indirectly through "$@", which shellcheck cannot see.
 # shellcheck disable=SC2329
 set -euo pipefail
@@ -687,9 +689,40 @@ firewall_step
 boot_enable docker
 boot_enable ufw
 
-# 10. What to run next.
-echo ""
-echo "Start the runner from $REPO_DIR:"
-echo "  sudo docker compose -f $COMPOSE_FILE up -d"
+# 10. Start the runner (ST96): asks "Start the runner now? [Y/n]" (yes by default). It starts only on an
+# explicit yes (Enter counts) at a real terminal. --yes, no terminal and --dry-run never start; they print the command.
+start_offer() {
+	local answer="" cmd="sudo docker compose -f $COMPOSE_FILE up -d"
+	if [ "$DRY_RUN" -eq 1 ]; then
+		echo "[dry-run] would ask: Start the runner now? [Y/n]; on yes, run from $REPO_DIR: $cmd"
+		return 0
+	fi
+	if [ "$ASSUME_YES" -eq 1 ] || [ ! -t 0 ]; then
+		echo "Not started (--yes or no terminal). To start it, run from $REPO_DIR: $cmd"
+		return 0
+	fi
+	printf 'Start the runner now? [Y/n] ' >&2
+	read -r answer || answer=""
+	case "$answer" in
+		'' | y | Y | yes | Yes | YES) ;;
+		*)
+			echo "Not started. To start it later, run from $REPO_DIR: $cmd"
+			return 0
+			;;
+	esac
+	CHANGES=$((CHANGES + 1))
+	echo "[change] starting the runner: $cmd"
+	if (cd "$REPO_DIR" && sudo docker compose -f "$COMPOSE_FILE" up -d); then
+		echo "runner started: it shows online on the forge's page"
+	else
+		echo "setup.sh: the runner did not start (docker printed why above)" >&2
+		return 1
+	fi
+}
+
+# The runner shows online on the forge's page only once started; then offer to start it.
+echo "runner $RUNNER_NAME, for the forge at $FORGE_URL: shows online on the forge's page (once started)"
+start_status=0
+start_offer || start_status=$?
 echo "changes: $CHANGES"
-exit 0
+exit "$start_status"
