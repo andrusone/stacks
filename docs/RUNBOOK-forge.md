@@ -141,11 +141,13 @@ Run it once more to see that nothing is left to change:
 
 ### 4c. Start the forge
 
+The setup script's last lines print the forge URL marked "once started", then ask `Start the forge now? [Y/n]`. Press Enter (or type `y`) to start it there. Answer `n`, or run `./compose/forge-vm/setup.sh --yes`, and it starts nothing; to start it later, run this command:
+
 ```
-sudo docker compose -f compose/forge-vm/docker-compose.yml up -d      # docker compose, on the forge VM: starts the forge
+sudo docker compose -f compose/forge-vm/docker-compose.yml up -d      # docker compose, on the forge VM: starts the forge (the same command the setup script offers)
 ```
 
-**What you should see:** open `FORGE_URL` in a browser (for example `http://192.168.1.60:3000`). The forge's page answers. Log in as `FORGE_ADMIN_USER` with `FORGE_ADMIN_PASSWORD`. The setup script's last line is `changes: <n>`; a run that had nothing left to change ends with `changes: 0`.
+**What you should see:** open `FORGE_URL` in a browser (for example `http://192.168.1.60:3000`) once the forge is started. The forge's page answers. Log in as `FORGE_ADMIN_USER` with `FORGE_ADMIN_PASSWORD`. The setup script's last line is `changes: <n>`; a run that had nothing left to change, and did not start the forge, ends with `changes: 0`.
 
 ### 4d. Updating the repo later
 
