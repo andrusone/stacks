@@ -64,7 +64,7 @@ To skip the questions, give a value as an environment variable of the same name,
 
 If `ufw` is active on the VM, `setup.sh` opens the two ports, `GATUS_PORT` and `NTFY_PORT`, and prints that it did. If `ufw` is not active, it changes nothing.
 
-The last lines show the two addresses marked "once started". Then `setup.sh` asks `Start the monitor now? [Y/n]`: press Enter (yes) and it runs the compose command below for you, and says whether it worked. Answer `n`, or use `--yes`, and it starts nothing; the command to run by hand is:
+The last lines show the two addresses marked "once started". Then `setup.sh` asks `Start the monitor now? [Y/n]`: press Enter (yes) and it runs the compose command below for you, and says whether it worked. If the monitor is already running, it says so and asks nothing. Answer `n`, or use `--yes`, and it starts nothing; the command to run by hand is:
 
 ```
 sudo docker compose -f compose/monitor/docker-compose.yml up -d      # docker compose, on the VM (only if you did not start it from setup.sh)
@@ -76,7 +76,7 @@ sudo docker compose -f compose/monitor/docker-compose.yml up -d      # docker co
 
 - **The status page:** open `http://<MONITOR_BIND>:<GATUS_PORT>` in a browser (for example `http://192.168.1.50:8081`). Within 2 minutes it lists one target, `starter`, with its answers up: host, service and right answer. (A stack with no declared need has no dependency answer, so the starter shows three.)
 - **The alert service:** `http://<MONITOR_BIND>:<NTFY_PORT>` answers in a browser.
-- **Running it again:** `./setup.sh --yes` again ends with the line `changes: 0`, because nothing needed changing. Without `--yes` it asks about starting again; answering yes runs `docker compose ... up -d` again, which changes nothing that is already running.
+- **Running it again:** `./setup.sh` again ends with the line `changes: 0`, because nothing needed changing. When the monitor is already running, setup says `monitor already running` and asks nothing about starting, so `--yes` is not needed for `changes: 0`.
 
 ## 4. Your phone, one line
 
