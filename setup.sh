@@ -12,9 +12,9 @@
 # - Settles six values before anything changes: an environment variable of the same name skips its
 #   prompt; else each is asked for with a default (Enter accepts). Defaults: MONITOR_BIND the default
 #   route's source address (never a Docker bridge), NTFY_TOPIC a generated word, the rest fixed. A
-#   stored value is the default on a rerun; --yes takes every default; no answer and no default
-#   stops naming the value. Answers go to compose/monitor/.env (mode 600) when they differ from it.
-#   The topic is never printed.
+#   value already in the env file is kept with no prompt (ST104), so a rerun asks only for a value
+#   the file lacks; --yes takes every default; no answer and no default stops naming the value.
+#   Answers go to compose/monitor/.env (mode 600) when they differ from it. The topic is never printed.
 # - Installs what mise cannot, each only when missing: the Docker engine and compose plugin from
 #   Docker's apt repository (the signing key must have Docker's published fingerprint), mise at
 #   MISE_VERSION, the service user (system, no login, in the docker group), and $MONITOR_DIR with
@@ -209,7 +209,7 @@ settle() {
 	fi
 	def="${ENV_VAL[$name]:-}"
 	[ -n "$def" ] || def="$(default_for "$name")"
-	if [ "$ASSUME_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+	if [ "$ASSUME_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -z "${ENV_VAL[$name]:-}" ]; then
 		printf '%s [%s]: ' "$name" "$([ "$name" = NTFY_TOPIC ] && echo hidden || echo "$def")" >&2
 		read -r answer || answer=""
 	fi
