@@ -1,0 +1,6 @@
+# Test target for OC8: the first of two stacks the monitor watches.
+host = "probe-a"
+service = "probe-a:8080"
+request = "http://probe-a:8080/"
+expect_status = 200
+needs = []

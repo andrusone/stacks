@@ -96,6 +96,9 @@ func Parse(name, src string) (Stack, []Problem) {
 		switch key {
 		case "host":
 			st.Host = stringValue(add, lineNo, key, val)
+			if st.Host == "" && val == `""` {
+				add(lineNo, "host: empty")
+			}
 		case "service":
 			st.Service = stringValue(add, lineNo, key, val)
 		case "request":
