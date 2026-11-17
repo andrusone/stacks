@@ -6,7 +6,7 @@ The steps to build the forge (FG-FR-15) and then the runner on two fresh VMs mad
 
 - **Two VMs**, each cloned by you from the golden image and finished with the image's own `post-clone-server.sh`. The image's steps are in [REF-golden-image.md](REF-golden-image.md); this runbook does not repeat them. Write the addresses down: the forge's is `FORGE_BIND`, the runner's is the one you ssh to.
 - **A second disk for the forge VM**, 20 GB to start, on TrueNAS iSCSI storage. You add it in Proxmox, format it and mount it at `/data` (section 3). Forgejo keeps its data on this disk, not on the NAS share.
-- **The admin password for the forge**, which you make yourself in section 4.
+- **The forge admin's email address**, which the setup script asks you for in section 4. The admin password the script generates for you; you do not make one.
 - **The runner's one-time registration token**, made on the forge's page once the forge is up (section 5).
 - **The TrueNAS and Proxmox API addresses** (`TRUENAS_ADDR` and `PROXMOX_ADDR`). The runner blocks outbound traffic to them; you do not need to open anything.
 
@@ -96,54 +96,42 @@ sudo mount /data      # mount, on the forge VM: mounts the disk at /data using t
 findmnt /data      # findmnt, on the forge VM: the SOURCE column is the disk and the FSTYPE column is ext4; if nothing prints, the disk is not mounted: go back to the mount step
 ```
 
-## 4. Forge VM: fill in one file, set it up, start it
+## 4. Forge VM: answer the setup's questions, set it up, start it
 
-### 4a. The env file
+### 4a. The values
 
-```
-cp compose/forge-vm/.env.example compose/forge-vm/.env      # cp, on the forge VM
-```
+There is no file to copy or edit. The setup script (section 4b) asks for each value below, one question at a time. Each question shows its default: press Enter to accept it. Your answers go to `compose/forge-vm/.env`, which git does not track.
 
-```
-nano compose/forge-vm/.env      # nano, on the forge VM: fill in the values from the table below, save and exit
-```
-
-The variables:
-
-| Variable | What it means | Example | Secret? |
+| Variable | What it means | Default | Secret? |
 |---|---|---|---|
-| `FORGE_USER` | The service user that owns the forge's folders. Leave `forge` unless you have a reason. | `forge` | no |
+| `FORGE_USER` | The service user that owns the forge's folders. | `forge` | no |
 | `FORGE_UID` | The user id of `FORGE_USER`. The setup script creates the user with this id. | `1100` | no |
 | `FORGE_GID` | The group id of `FORGE_USER`. | `1100` | no |
-| `FORGE_BIND` | The forge VM's own address, so your browser and the runner can reach the forge. | `192.168.1.60` | no |
+| `FORGE_BIND` | The forge VM's own address, so your browser and the runner can reach the forge. | the VM's address on its network (for example `192.168.1.60`) | no |
 | `FORGE_PORT` | The port of the forge's web page. | `3000` | no |
-| `FORGE_URL` | The address the forge's page answers at, with the port: what you type in a browser and what the runner connects to. | `http://192.168.1.60:3000` | no |
-| `FORGE_DATA` | The folder on the data disk where the forge keeps all its data. Leave `/data/forgejo` unless you have a reason. | `/data/forgejo` | no |
+| `FORGE_URL` | The address the forge's page answers at, with the port: what you type in a browser and what the runner connects to. | `http://` + `FORGE_BIND` + `:` + `FORGE_PORT` + `/` | no |
+| `FORGE_DATA` | The folder on the data disk where the forge keeps all its data. | `/data/forgejo` | no |
 | `FORGE_ADMIN_USER` | The forge's admin login. You will log in as this user. | `forge-admin` | no |
-| `FORGE_ADMIN_EMAIL` | The admin's email address, as the forge asks for it. Use any address you control. | `admin@example.com` | no |
-| `FORGE_ADMIN_PASSWORD` | The admin's password. A random string, made in the next block, kept in this file only. | the output of the command below | **yes** |
+| `FORGE_ADMIN_EMAIL` | The admin's email address, as the forge asks for it. Use any address you control. | none: you type it (for example `admin@example.com`) | no |
+| `FORGE_ADMIN_PASSWORD` | The admin's password. The script generates it and does not print it. | generated | **yes** |
 
-Make the admin password with a command that ships with Ubuntu, then paste the output into `FORGE_ADMIN_PASSWORD`:
+The script never prints the password. To read it, once the setup has run, use this command; it prints the value, so do not paste the output into a message:
 
 ```
-openssl rand -hex 24      # openssl, on the forge VM: copy the output into FORGE_ADMIN_PASSWORD
+grep '^FORGE_ADMIN_PASSWORD=' compose/forge-vm/.env      # grep, on the forge VM: prints the generated admin password from the .env file
 ```
 
 The password and the `.env` file are secrets. Do not put them in git, in a file other than `.env`, or in a message to anyone.
 
 ### 4b. The setup script
 
-Run the setup script as your normal user; it calls `sudo` itself. It checks the VM and the data disk, installs Docker and the repo's tools with mise, creates the service user and the data folder under `/data`, and sets restart on boot. If `/data` is not a mounted separate disk it stops before any change and names the fix: go back to section 3.
+Run the setup script as your normal user; it calls `sudo` itself. It asks for the values in section 4a first, then checks the VM and the data disk, installs Docker and the repo's tools with mise, creates the service user and the data folder under `/data`, and sets restart on boot. If `/data` is not a mounted separate disk it stops before any change and names the fix: go back to section 3.
 
 ```
-./compose/forge-vm/setup.sh      # bash, on the forge VM, as your normal user: checks the VM and the data disk, installs Docker and the repo's tools with mise, creates the service user and the data folder, sets restart on boot
+./compose/forge-vm/setup.sh      # bash, on the forge VM, as your normal user: asks for the values (Enter accepts each default), then checks the VM and the data disk, installs Docker and the repo's tools with mise, creates the service user and the data folder, sets restart on boot
 ```
 
-If the script says it created `compose/forge-vm/.env` and exits with status 1, you skipped the copy in 4a: fill in the file, then run the same script again:
-
-```
-./compose/forge-vm/setup.sh      # bash, on the forge VM, as your normal user: the same script, run again after filling in .env
-```
+If it stops and names a value (for example `FORGE_ADMIN_EMAIL has no default here`), it has not changed the VM: run the same script again and answer that question. (Answers already given are kept in `.env`.) `./compose/forge-vm/setup.sh --yes` takes every default without asking; it still stops, naming `FORGE_ADMIN_EMAIL`, because that value has no default.
 
 Run it once more to see that nothing is left to change:
 
@@ -408,7 +396,7 @@ sudo mount /data      # mount, on the new forge VM: mounts the disk at /data
 findmnt /data      # findmnt, on the new forge VM: must print the disk with FSTYPE ext4; if not, do not go on
 ```
 
-4. **Get the repo and the env file.** Send the repo as in section 2 (the bundle is made on your own computer; the forge's own copy is gone and must not be used). Fill in `compose/forge-vm/.env` again from the table in section 4a. `FORGE_UID` and `FORGE_GID` must be the same as before, because the files on the disk belong to those ids. `FORGE_ADMIN_PASSWORD` is used only if the admin user does not exist yet, so the same value is fine if you kept it, or a new one if you did not.
+4. **Get the repo and the env file.** Send the repo as in section 2 (the bundle is made on your own computer; the forge's own copy is gone and must not be used). Run the setup script again and answer its questions from the table in section 4a; the values already in `compose/forge-vm/.env` are the defaults, so Enter keeps them. `FORGE_UID` and `FORGE_GID` must be the same as before, because the files on the disk belong to those ids. `FORGE_ADMIN_PASSWORD` is used only if the admin user does not exist yet, so keep the stored value (Enter accepts it).
 5. **Set up and start**, as in section 4b and 4c, each command in its own block, on the new forge VM:
 
 ```

@@ -6,13 +6,15 @@
 # of the stacks repo: ./compose/forge-vm/setup.sh (it calls sudo itself for each step that needs it).
 #
 # - Refuses a bare root login, and stops with a plain message if not Ubuntu (apt).
-# - Reads the values from compose/forge-vm/.env with a plain loop; the file is never sourced. With no
-#   .env it copies .env.example to it (mode 600), names the values to fill in and exits 1 before
-#   anything else. An empty value stops the run, naming it. No password is ever printed.
-# - Preflight, before any change: the image's packages are there (git, curl, ca-certificates, gnupg,
-#   cifs-utils, ufw, openssh-server, sudo; none is installed here), /data is a mounted filesystem
-#   separate from /, and FORGE_DATA is /data or under it. Otherwise it stops and prints the line that
-#   fixes it. It never creates a network mount, never formats or partitions a disk.
+# - Settles the values in compose/forge-vm/.env before any other change (ST93): each is asked for with
+#   its default (Enter accepts); an environment variable of the same name skips its prompt; --yes takes
+#   every default; a rerun offers the stored values; no answer and no default stops naming the value.
+#   The defaults and checks are in default_for and valid_answer. The file is written mode 600, only when
+#   a value differs, and no password is ever printed.
+# - Preflight, after the values: the image's packages (git, curl, ca-certificates, gnupg, cifs-utils,
+#   ufw, openssh-server, sudo; none is installed here), /data a mounted filesystem separate from /, and
+#   FORGE_DATA /data or under it. Otherwise it stops and prints the line that fixes it. It never creates
+#   a network mount, never formats or partitions a disk.
 # - Installs only what the image lacks, each when missing: the Docker engine and compose plugin from
 #   Docker's apt repository (the signing key must have Docker's published fingerprint); mise at
 #   MISE_VERSION; the service user FORGE_USER with FORGE_UID and FORGE_GID (system user, no login, in
@@ -27,7 +29,7 @@
 #   change(), which --dry-run skips. A real run's last line is changes: n.
 # change() and ensure() run the step functions indirectly through "$@", which shellcheck cannot see.
 # shellcheck disable=SC2329
-# The env values are read by name (${!name}) in env_problems; shellcheck cannot see that, so SC2034 is off.
+# The env values are read by name (${!name}) in settle; shellcheck cannot see that, so SC2034 is off.
 # shellcheck disable=SC2034
 set -euo pipefail
 
@@ -36,7 +38,8 @@ set -euo pipefail
 MISE_VERSION=v2026.11.8
 
 usage() {
-	echo "usage: ./compose/forge-vm/setup.sh [--dry-run | --check]"
+	echo "usage: ./compose/forge-vm/setup.sh [--yes | --dry-run | --check]"
+	echo "  --yes       take every default without asking"
 	echo "  --check     say whether the VM is ready; changes nothing, needs no sudo"
 	echo "  --dry-run   print every step, change nothing"
 }
@@ -49,10 +52,12 @@ usage_error() {
 
 DRY_RUN=0
 CHECK=0
+ASSUME_YES=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--dry-run) DRY_RUN=1 ;;
 		--check) CHECK=1 ;;
+		--yes) ASSUME_YES=1 ;;
 		-h | --help)
 			usage
 			exit 0
@@ -89,23 +94,23 @@ IMAGE_PACKAGES=(git curl ca-certificates gnupg cifs-utils ufw openssh-server sud
 ENV_KEYS=(FORGE_USER FORGE_UID FORGE_GID FORGE_BIND FORGE_PORT FORGE_URL FORGE_DATA FORGE_ADMIN_USER FORGE_ADMIN_EMAIL FORGE_ADMIN_PASSWORD)
 SYSTEMD_RUN_DIR=/run/systemd/system
 
-# The values from .env. Set by load_env; empty until then.
-FORGE_USER=""
-FORGE_UID=""
-FORGE_GID=""
-FORGE_BIND=""
-FORGE_PORT=""
-FORGE_URL=""
-FORGE_DATA=""
-FORGE_ADMIN_USER=""
-FORGE_ADMIN_EMAIL=""
-FORGE_ADMIN_PASSWORD=""
+# ENV_VAL holds the values in use, STORED the ones in the file. set_globals copies ENV_VAL to the FORGE_*
+# names once settled; those are not set here, so an environment variable of the same name is not shadowed.
+declare -A ENV_VAL=()
+declare -A STORED=()
 
 CHANGES=0
 MISSING=()
 ENV_PRESENT=0
 
 step() { echo "[step] $*"; }
+
+# A stop while settling: a real run exits 1; --dry-run says what a real run would stop on and returns 1.
+stop_or_note() {
+	if [ "$MODE" != dry ]; then echo "setup.sh: $*" >&2; exit 1; fi
+	echo "[dry-run] a real run would stop: $*"
+	return 1
+}
 
 # The only place a machine change happens. --dry-run prints it and skips it.
 change() {
@@ -158,9 +163,10 @@ ensure() {
 
 # --- the env file ----------------------------------------------------------
 
-# Reads the wanted values with a plain loop. Never sourced, so nothing in it runs.
-load_env() {
-	local line key value
+# Reads the values from the env file, if there is one, with a plain loop. Never sourced.
+read_env() {
+	local line key value want
+	[ -f "$ENV_FILE" ] || return 0
 	while IFS= read -r line || [ -n "$line" ]; do
 		line="${line%$'\r'}"
 		case "$line" in
@@ -168,49 +174,126 @@ load_env() {
 		esac
 		key="${line%%=*}"
 		value="${line#*=}"
-		case "$key" in
-			FORGE_USER) FORGE_USER="$value" ;;
-			FORGE_UID) FORGE_UID="$value" ;;
-			FORGE_GID) FORGE_GID="$value" ;;
-			FORGE_BIND) FORGE_BIND="$value" ;;
-			FORGE_PORT) FORGE_PORT="$value" ;;
-			FORGE_URL) FORGE_URL="$value" ;;
-			FORGE_DATA) FORGE_DATA="$value" ;;
-			FORGE_ADMIN_USER) FORGE_ADMIN_USER="$value" ;;
-			FORGE_ADMIN_EMAIL) FORGE_ADMIN_EMAIL="$value" ;;
-			FORGE_ADMIN_PASSWORD) FORGE_ADMIN_PASSWORD="$value" ;;
-		esac
+		if [[ " ${ENV_KEYS[*]} " == *" $key "* ]]; then ENV_VAL[$key]="$value"; fi
 	done < "$ENV_FILE"
+	for want in "${ENV_KEYS[@]}"; do
+		STORED[$want]="${ENV_VAL[$want]:-}"
+	done
 }
 
-# Prints the names of values that are empty, and of ids and the port that are not numbers. Prints
-# names only, never a value: the admin password is a secret.
-env_problems() {
+# Copies the settled values into the FORGE_* names the rest of the script uses.
+set_globals() {
 	local name
-	for name in "${ENV_KEYS[@]}"; do
-		if [ -z "${!name}" ]; then
-			echo "$name"
-		fi
-	done
-	for name in FORGE_UID FORGE_GID FORGE_PORT; do
-		if [ -n "${!name}" ] && ! [[ ${!name} =~ ^[0-9]+$ ]]; then
-			echo "$name (not a number)"
-		fi
-	done
+	for name in "${ENV_KEYS[@]}"; do printf -v "$name" '%s' "${ENV_VAL[$name]:-}"; done
 }
 
-# The problems on one line, comma separated; empty when every value is set.
+# The default of a value: a fixed one, one cheap attempt (FORGE_BIND: one default-route lookup, never
+# an address on a Docker bridge), a generated secret, or none (FORGE_ADMIN_EMAIL: the owner's).
+default_for() {
+	local src bridges
+	case "$1" in
+		FORGE_BIND)
+			src="$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+			bridges="$(ip -o -4 addr show 2>/dev/null | awk '$2 ~ /^(docker|br-)/ {print $4}')"
+			if [[ -n $src && $src != 172.17.* ]] && ! grep -qF "${src}/" <<< "$bridges"; then
+				echo "$src"
+			fi
+			;;
+		FORGE_URL)
+			if [ -n "${ENV_VAL[FORGE_BIND]:-}" ]; then
+				echo "http://${ENV_VAL[FORGE_BIND]}:${ENV_VAL[FORGE_PORT]:-}/"
+			fi
+			;;
+		FORGE_USER) echo forge ;;
+		FORGE_UID | FORGE_GID) echo 1100 ;;
+		FORGE_PORT) echo 3000 ;;
+		FORGE_DATA) echo /data/forgejo ;;
+		FORGE_ADMIN_USER) echo forge-admin ;;
+		FORGE_ADMIN_PASSWORD) openssl rand -hex 24 ;;
+	esac
+}
+
+# A value is one word with no spaces; the ids and port are digits; the admin email has one @.
+valid_answer() {
+	case "$1" in
+		*_PORT | *_UID | *_GID) [[ $2 =~ ^[0-9]+$ ]] ;;
+		FORGE_ADMIN_EMAIL) [[ $2 =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]] ;;
+		*) [[ $2 =~ ^[^[:space:]]+$ ]] ;;
+	esac
+}
+
+# Settles one value into ENV_VAL. An environment variable of the same name wins, with no prompt.
+# Otherwise asks, with the stored or default value as the default; no answer (or no terminal) takes
+# it. The password's prompt says hidden and typing is not echoed.
+settle() {
+	local name=$1 def answer=""
+	if [ -n "${!name:-}" ]; then
+		ENV_VAL[$name]="${!name}"
+	else
+		def="${ENV_VAL[$name]:-}"
+		if [ -z "$def" ]; then def="$(default_for "$name")"; fi
+		if [ "$MODE" = run ] && [ "$ASSUME_YES" -eq 0 ]; then
+			if [ "$name" = FORGE_ADMIN_PASSWORD ]; then
+				printf '%s [hidden]: ' "$name" >&2
+				read -rs answer || true
+				echo >&2
+			else
+				printf '%s [%s]: ' "$name" "${def:-no default}" >&2
+				read -r answer || true
+			fi
+		fi
+		if [ -z "$answer" ]; then answer="$def"; fi
+		if [ -z "$answer" ]; then
+			stop_or_note "$name has no default here: set it in the environment or in $ENV_FILE" || return 1
+		fi
+		ENV_VAL[$name]="$answer"
+	fi
+	if ! valid_answer "$name" "${ENV_VAL[$name]}"; then
+		stop_or_note "$name: use one word with no spaces (the email has one @; the ids and port are digits)" || return 1
+	fi
+}
+
+# The names of the values that are not valid (empty included), comma separated; empty when all are.
+# Names only, never a value: the admin password is a secret.
 env_problem_list() {
-	env_problems | paste -sd, - | sed 's/,/, /g'
+	local name out=""
+	for name in "${ENV_KEYS[@]}"; do
+		if ! valid_answer "$name" "${ENV_VAL[$name]:-}"; then out+="$name, "; fi
+	done
+	out="${out%, }"
+	echo "$out"
 }
 
 env_values_ok() {
 	[ -z "$(env_problem_list)" ]
 }
 
-copy_env() {
-	cp "$ENV_EXAMPLE" "$ENV_FILE"
-	chmod 600 "$ENV_FILE"
+# The env file's text: the template with the settled values filled in, comments kept.
+render_env() {
+	local line key
+	while IFS= read -r line || [ -n "$line" ]; do
+		key="${line%%=*}"
+		if [[ $line == *=* && $key =~ ^[A-Z_]+$ ]]; then echo "$key=${ENV_VAL[$key]}"; else echo "$line"; fi
+	done < "$ENV_EXAMPLE"
+}
+
+# Settles every value, then writes the env file (mode 600, from a temp file) only when one differs from
+# the stored one. A stop (no answer and no default, a bad value) exits before anything is written.
+write_env_file() {
+	local tmp name same=1
+	read_env
+	for name in "${ENV_KEYS[@]}"; do
+		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
+		[ "${STORED[$name]:-}" = "${ENV_VAL[$name]}" ] || same=0
+	done
+	if [ -f "$ENV_FILE" ] && [ "$same" -eq 1 ]; then
+		step "$ENV_FILE already has these values"
+		return 0
+	fi
+	tmp="$(mktemp)"
+	render_env > "$tmp"
+	change "write $ENV_FILE (mode 600; the password is not shown)" install -m 600 "$tmp" "$ENV_FILE"
+	rm -f "$tmp"
 }
 
 # --- preflight predicates (read only) ---------------------------------------
@@ -387,28 +470,25 @@ if [ "$MODE" = check ] && ! os_is_ubuntu; then
 	MISSING+=("ubuntu")
 fi
 
-# The env file comes first (step 2): no .env means copy, say what to fill in, and stop.
-if [ -f "$ENV_FILE" ]; then
-	ENV_PRESENT=1
-	load_env
-	need "env values" "fill in these values in compose/forge-vm/.env: $(env_problem_list)" env_values_ok
-elif [ "$MODE" = check ]; then
-	echo ".env: missing (copy compose/forge-vm/.env.example to compose/forge-vm/.env and fill it in)"
-	MISSING+=(".env")
-elif [ "$MODE" = dry ]; then
-	echo "[dry-run] would: copy .env.example to .env (mode 600), then stop: fill in the empty values and rerun"
-	echo "[dry-run] would: change nothing else"
-	echo "would change: $((CHANGES + 1))"
-	exit 0
+# The values (ST93): asked for with defaults, then written to the env file when they differ from it.
+# --check only reads the file and changes nothing.
+if [ "$MODE" = check ]; then
+	read_env
+	if [ -f "$ENV_FILE" ]; then
+		ENV_PRESENT=1
+		set_globals
+		need "env values" "fill in these values in compose/forge-vm/.env: $(env_problem_list)" env_values_ok
+	else
+		echo ".env: missing (./compose/forge-vm/setup.sh asks for the values and writes it)"
+		MISSING+=(".env")
+	fi
 else
-	change "copy compose/forge-vm/.env.example to compose/forge-vm/.env (mode 600)" copy_env
-	load_env
-	echo "setup.sh: wrote $ENV_FILE (mode 600). Fill in these values, then rerun: $(env_problem_list)" >&2
-	echo "changes: $CHANGES"
-	exit 1
+	write_env_file
+	ENV_PRESENT=1
+	set_globals
 fi
 
-# Preflight (before any change): the image's packages, the data disk, the data path.
+# Preflight (before any further change): the image's packages, the data disk, the data path.
 for package in "${IMAGE_PACKAGES[@]}"; do
 	need "package $package" "not on the image: the golden image should have it; install it by hand, then rerun" \
 		package_installed "$package"
