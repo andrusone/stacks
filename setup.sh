@@ -1,25 +1,30 @@
 #!/usr/bin/env bash
-# The one-command setup for a plain Ubuntu Server VM (HL-FR-19, MVP 2): Docker, mise, the monitor's
-# service user and folders, and the Gatus config, so that
-#   docker compose -f compose/monitor/docker-compose.yml up -d
-# brings the monitor up, and it comes back after a reboot. Run as: sudo ./setup.sh, at the root of
-# the stacks checkout, from the login of the user who owns the checkout.
+# The one-command setup for the monitor's VM (HL-FR-19, MVP 2), built on the golden image
+# (docs/REF-golden-image.md): Docker, mise, the monitor's service user and folders, the Gatus config
+# and the ufw ports, so that
+#   sudo docker compose -f compose/monitor/docker-compose.yml up -d
+# brings the monitor up, and it comes back after a reboot. Run as your normal user, at the root of
+# the stacks checkout: ./setup.sh. It calls sudo itself for each step that needs it.
 #
-# - Stops with a plain message if not root, not Ubuntu (apt), or run without SUDO_USER.
+# - Refuses a bare root login, and stops with a plain message if not Ubuntu (apt). The golden image
+#   provides curl, gpg, sudo and ca-certificates; if one is missing it stops and names it. It
+#   installs none of the baseline's packages (ssh, ufw, cifs-utils, git).
 # - Reads six values from compose/monitor/.env with a plain loop; the file is never sourced. If the
-#   file is missing, copies .env.example to it (mode 600, owned by SUDO_USER), lists the variables
-#   and exits 1 before anything else. A value that is empty or unset is named and stops the run.
-#   The topic value is never printed.
+#   file is missing, copies .env.example to it (mode 600), lists the variables and exits 1 before
+#   anything else. A value that is empty or unset is named and stops the run. The topic value is
+#   never printed.
 # - Installs what mise cannot, each only when missing: the Docker engine and compose plugin from
 #   Docker's apt repository (the signing key must have Docker's published fingerprint), mise at
 #   MISE_VERSION, the service user (system, no login, in the docker group), and $MONITOR_DIR with
 #   gatus and ntfy inside, owned by that user.
-# - As SUDO_USER in this checkout: mise trust and mise install, so mise.toml is the tool list.
+# - In this checkout: mise trust and mise install, so mise.toml is the tool list.
 # - Writes $MONITOR_DIR/gatus/config.yaml from `go run ./cmd/health generate health-starter`,
 #   through a temp file and mv, only when its text differs.
 # - systemctl enable docker, so the containers restart on boot. Without systemd it counts no change
 #   and prints the command to run.
-# - --check changes nothing and needs no root: it lists each item as ok or missing and exits
+# - ufw: if it is active, allows exactly GATUS_PORT and NTFY_PORT (tcp) when not already allowed, and
+#   says so. If it is inactive, changes nothing and says so.
+# - --check changes nothing and needs no sudo prompt: it lists each item as ok or missing and exits
 #   non-zero if anything is missing. --dry-run prints every step and changes nothing.
 # - Every machine change goes through change(), which --dry-run skips. The last line is changes: n.
 # change() runs the step functions indirectly through "$@", which shellcheck cannot see.
@@ -31,8 +36,8 @@ set -euo pipefail
 MISE_VERSION=v2026.11.8
 
 usage() {
-	echo "usage: sudo ./setup.sh [--dry-run | --check]"
-	echo "  --check     say whether the machine is ready; changes nothing, needs no root"
+	echo "usage: ./setup.sh [--dry-run | --check]"
+	echo "  --check     say whether the machine is ready; changes nothing, no sudo prompt"
 	echo "  --dry-run   print every step, change nothing"
 }
 
@@ -68,13 +73,12 @@ MISE_BIN=/usr/local/bin/mise
 DOCKER_KEY=/etc/apt/keyrings/docker.asc
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
-BASE_PACKAGES=(ca-certificates curl gnupg sudo)
+IMAGE_TOOLS=(curl gpg sudo)
 ENV_KEYS=(MONITOR_USER MONITOR_DIR MONITOR_BIND GATUS_PORT NTFY_PORT NTFY_TOPIC)
 SYSTEMD_RUN_DIR=/run/systemd/system
 
-# The checkout's owner: the sudo caller. A --check run as the user itself uses that user's name.
-RUN_USER="${SUDO_USER:-$(id -un)}"
-RUN_GROUP="$(id -gn "$RUN_USER" 2>/dev/null || echo "$RUN_USER")"
+# The checkout's user: whoever runs this script. Root is refused in preflight.
+RUN_USER="$(id -un)"
 CHANGES=0
 MISSING=()
 declare -A ENV_VAL=()
@@ -172,21 +176,32 @@ env_problem_list() {
 
 # --- preflight and steps ---------------------------------------------------
 
+# The golden image's tools that this script uses. Named when missing; never installed here.
+image_tools_missing() {
+	local tool missing=()
+	for tool in "${IMAGE_TOOLS[@]}"; do
+		if ! command -v "$tool" >/dev/null 2>&1; then
+			missing+=("$tool")
+		fi
+	done
+	if ! dpkg -s ca-certificates >/dev/null 2>&1; then
+		missing+=(ca-certificates)
+	fi
+	echo "${missing[*]}"
+}
+
 preflight() {
-	if [ "$(id -u)" -ne 0 ]; then
-		stop_or_note "not root. Run it as: sudo ./setup.sh (from the login of the user who owns this checkout)"
+	local image_missing
+	if [ "$(id -u)" -eq 0 ]; then
+		stop_or_note "run as your normal user, not root: setup.sh calls sudo itself for each step that needs it"
 	fi
 	if ! grep -qx 'ID=ubuntu' /etc/os-release 2>/dev/null || ! command -v apt-get >/dev/null 2>&1; then
 		stop_or_note "not Ubuntu (apt-get not found, or /etc/os-release is not ID=ubuntu)"
 	fi
-	if [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = root ]; then
-		stop_or_note "no user to run mise for: run sudo from your own login (SUDO_USER is not set)"
+	image_missing="$(image_tools_missing)"
+	if [ -n "$image_missing" ]; then
+		stop_or_note "the golden image should provide these and they are missing: $image_missing. Install them from the image, not from this script"
 	fi
-}
-
-apt_install() {
-	apt-get update -qq
-	DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@"
 }
 
 docker_ready() {
@@ -196,32 +211,33 @@ docker_ready() {
 # Docker's own apt repository, the official route. Its published signing key is read and checked
 # against the fingerprint above before apt trusts it. Nothing is generated.
 docker_install() {
-	local codename tmp_home
+	local codename tmp_dir fingerprints
 	codename="$(sed -n 's/^UBUNTU_CODENAME=//p' /etc/os-release)"
 	if [ -z "$codename" ]; then
 		codename="$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)"
 	fi
-	tmp_home="$(mktemp -d)"
-	install -d -m 0755 /etc/apt/keyrings
-	curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o "$DOCKER_KEY.part"
-	if ! gpg --homedir "$tmp_home" --show-keys --with-colons "$DOCKER_KEY.part" |
-		grep -qxF "fpr:::::::::${DOCKER_KEY_FPR}:"; then
-		rm -rf "$tmp_home" "$DOCKER_KEY.part"
+	tmp_dir="$(mktemp -d)"
+	mkdir -m 700 "$tmp_dir/gnupg"
+	curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o "$tmp_dir/docker.asc"
+	fingerprints="$(gpg --homedir "$tmp_dir/gnupg" --show-keys --with-colons "$tmp_dir/docker.asc")"
+	if ! grep -qxF "fpr:::::::::${DOCKER_KEY_FPR}:" <<< "$fingerprints"; then
+		rm -rf "$tmp_dir"
 		echo "setup.sh: Docker's key does not have fingerprint $DOCKER_KEY_FPR; nothing installed" >&2
 		return 1
 	fi
-	rm -rf "$tmp_home"
-	mv "$DOCKER_KEY.part" "$DOCKER_KEY"
-	chmod a+r "$DOCKER_KEY"
-	cat > "$DOCKER_SOURCES" <<EOF
+	cat > "$tmp_dir/docker.sources" <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
 Suites: $codename
 Components: stable
 Signed-By: $DOCKER_KEY
 EOF
-	apt-get update -qq
-	DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-compose-plugin
+	sudo install -d -m 0755 /etc/apt/keyrings
+	sudo install -m 0644 "$tmp_dir/docker.asc" "$DOCKER_KEY"
+	sudo install -m 0644 "$tmp_dir/docker.sources" "$DOCKER_SOURCES"
+	rm -rf "$tmp_dir"
+	sudo apt-get update -qq
+	sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-compose-plugin
 }
 
 # The version mise prints, or empty when it is not installed.
@@ -232,19 +248,14 @@ mise_installed_version() {
 }
 
 install_mise() {
-	curl -fsSL https://mise.run | MISE_VERSION="$MISE_VERSION" MISE_INSTALL_PATH="$MISE_BIN" sh
+	curl -fsSL https://mise.run | sudo env MISE_VERSION="$MISE_VERSION" MISE_INSTALL_PATH="$MISE_BIN" sh
 }
 
-# Runs mise in the folder given, as the checkout's user. Runs it directly when that is the current
-# user (--check, run as the user), so no sudo prompt.
-mise_as_user() {
+# Runs mise in the folder given, as this user.
+mise_run() {
 	local dir=$1
 	shift
-	if [ "$(id -un)" = "$RUN_USER" ]; then
-		env MISE_YES=1 "$MISE_BIN" -C "$dir" "$@"
-	else
-		sudo -H -u "$RUN_USER" env MISE_YES=1 "$MISE_BIN" -C "$dir" "$@"
-	fi
+	env MISE_YES=1 "$MISE_BIN" -C "$dir" "$@"
 }
 
 user_ready() {
@@ -256,12 +267,12 @@ user_ready() {
 
 user_make() {
 	if ! getent group docker >/dev/null; then
-		groupadd --system docker
+		sudo groupadd --system docker
 	fi
 	if ! id -u "$MONITOR_USER" >/dev/null 2>&1; then
-		useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$MONITOR_USER"
+		sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$MONITOR_USER"
 	fi
-	usermod -aG docker "$MONITOR_USER"
+	sudo usermod -aG docker "$MONITOR_USER"
 }
 
 dirs_ready() {
@@ -274,11 +285,19 @@ dirs_ready() {
 }
 
 dirs_make() {
-	install -d -o "$MONITOR_USER" -g "$(id -gn "$MONITOR_USER")" \
+	sudo install -d -o "$MONITOR_USER" -g "$(id -gn "$MONITOR_USER")" \
 		"$MONITOR_DIR" "$MONITOR_DIR/gatus" "$MONITOR_DIR/ntfy"
 }
 
-# Generates the Gatus config into a temp file beside it, and moves it in only when its text differs.
+# Moves a generated config into place as the service user's file: staged beside the target, then
+# mv, so the file is replaced in one step.
+write_gatus_config() {
+	local tmp=$1 staged="$GATUS_DIR/.config.yaml.new"
+	sudo install -m 0644 -o "$MONITOR_USER" -g "$(id -gn "$MONITOR_USER")" "$tmp" "$staged"
+	sudo mv -f "$staged" "$GATUS_CONFIG"
+}
+
+# Generates the Gatus config into a temp file, and writes it only when its text differs.
 gatus_config_step() {
 	local tmp
 	if [ "$DRY_RUN" -eq 1 ]; then
@@ -286,30 +305,41 @@ gatus_config_step() {
 		echo "[dry-run] would: write $GATUS_CONFIG from health-starter, if its text differs"
 		return 0
 	fi
-	tmp="$(mktemp "$GATUS_DIR/config.yaml.XXXXXX")"
-	if ! mise_as_user "$REPO_DIR" exec -- go run ./cmd/health generate health-starter > "$tmp"; then
+	tmp="$(mktemp)"
+	if ! mise_run "$REPO_DIR" exec -- go run ./cmd/health generate health-starter > "$tmp"; then
 		rm -f "$tmp"
 		echo "setup.sh: the health generator failed; $GATUS_CONFIG is unchanged" >&2
 		exit 1
 	fi
-	chown "$MONITOR_USER:$(id -gn "$MONITOR_USER")" "$tmp"
-	chmod 644 "$tmp"
 	if [ -f "$GATUS_CONFIG" ] && cmp -s "$tmp" "$GATUS_CONFIG"; then
 		rm -f "$tmp"
 		step "$GATUS_CONFIG already current"
 		return 0
 	fi
-	change "write $GATUS_CONFIG (generated from health-starter)" mv -f "$tmp" "$GATUS_CONFIG"
+	change "write $GATUS_CONFIG (generated from health-starter)" write_gatus_config "$tmp"
+	rm -f "$tmp"
 }
 
 systemd_present() {
 	[ -d "$SYSTEMD_RUN_DIR" ]
 }
 
+# The ufw rules listing. ufw needs root to list rules: run mode uses sudo (it may prompt); --check
+# uses sudo -n and returns non-zero when that would need a password. Prints nothing when ufw is
+# not installed.
+ufw_listing() {
+	command -v ufw >/dev/null 2>&1 || return 0
+	if [ "$CHECK" -eq 1 ]; then
+		sudo -n ufw status 2>/dev/null
+	else
+		sudo ufw status
+	fi
+}
+
 # --- --check ---------------------------------------------------------------
 
 run_check() {
-	local ver problems
+	local ver problems listing port
 	ver="$(mise_installed_version)"
 	if [ "$ver" = "${MISE_VERSION#v}" ]; then
 		report ok "mise" "$ver, pinned"
@@ -356,9 +386,9 @@ run_check() {
 	fi
 
 	local trust_out
-	trust_out="$(mise_as_user "$REPO_DIR" trust --show 2>/dev/null || true)"
+	trust_out="$(mise_run "$REPO_DIR" trust --show 2>/dev/null || true)"
 	if grep -q ': trusted$' <<< "$trust_out" &&
-		[ -z "$(mise_as_user "$REPO_DIR" ls --missing 2>/dev/null || true)" ]; then
+		[ -z "$(mise_run "$REPO_DIR" ls --missing 2>/dev/null || true)" ]; then
 		report ok "mise tools in the checkout" "trusted, installed"
 	else
 		report missing "mise tools in the checkout" "not trusted, or a tool is not installed"
@@ -370,6 +400,24 @@ run_check() {
 		report ok "docker at boot" "enabled"
 	else
 		report missing "docker at boot" "not enabled"
+	fi
+
+	if ! command -v ufw >/dev/null 2>&1; then
+		echo "ufw: not installed, nothing to open"
+	elif [ -n "$problems" ]; then
+		echo "ufw: not checked until the env file is complete"
+	elif ! listing="$(ufw_listing)"; then
+		echo "ufw: not read without a sudo prompt; ./setup.sh (run mode) checks it"
+	elif ! grep -q '^Status: active' <<< "$listing"; then
+		echo "ufw: inactive, nothing to open"
+	else
+		for port in "$GATUS_PORT" "$NTFY_PORT"; do
+			if grep -Eq "^${port}/tcp[[:space:]]+ALLOW" <<< "$listing"; then
+				report ok "ufw allows ${port}/tcp" "active"
+			else
+				report missing "ufw allows ${port}/tcp" "ufw is active and the port is not open"
+			fi
+		done
 	fi
 
 	if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -390,8 +438,8 @@ fi
 
 preflight
 step "checkout: $REPO_DIR"
-step "user for mise: $RUN_USER"
-step "mise version (from workbench/bootstrap/mise.version): $MISE_VERSION"
+step "user: $RUN_USER"
+step "mise version (pinned here from workbench/bootstrap/mise.version): $MISE_VERSION"
 
 # 1. The env file. Without it, copy the template and stop before anything else.
 if [ ! -f "$ENV_FILE" ]; then
@@ -400,9 +448,9 @@ if [ ! -f "$ENV_FILE" ]; then
 		echo "changes: $CHANGES"
 		exit 0
 	fi
-	change "copy $ENV_EXAMPLE to $ENV_FILE (mode 600, owned by $RUN_USER)" \
-		install -m 600 -o "$RUN_USER" -g "$RUN_GROUP" "$ENV_EXAMPLE" "$ENV_FILE"
-	echo "Fill in these variables in $ENV_FILE, then run sudo ./setup.sh again:"
+	change "copy $ENV_EXAMPLE to $ENV_FILE (mode 600)" \
+		install -m 600 "$ENV_EXAMPLE" "$ENV_FILE"
+	echo "Fill in these variables in $ENV_FILE, then run ./setup.sh again:"
 	grep -E '^[A-Z_]+=' "$ENV_EXAMPLE" | cut -d= -f1 | sed 's/^/  /'
 	if [ "$DRY_RUN" -eq 1 ]; then
 		echo "[dry-run] stops here: $ENV_FILE has no values yet"
@@ -421,23 +469,11 @@ if [ -n "$problems" ]; then
 	exit 0
 fi
 
-# 2. Install what mise cannot: apt packages, then Docker.
-apt_missing=()
-for pkg in "${BASE_PACKAGES[@]}"; do
-	if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-		apt_missing+=("$pkg")
-	fi
-done
-if [ "${#apt_missing[@]}" -gt 0 ]; then
-	change "apt-get install ${apt_missing[*]}" apt_install "${apt_missing[@]}"
-else
-	step "apt packages already installed: ${BASE_PACKAGES[*]}"
-fi
-
+# 2. Install what mise cannot: Docker, from its own apt repository.
 if docker_ready; then
 	step "docker and compose plugin already installed"
 else
-	change "install the Docker engine and compose plugin from Docker's apt repository" docker_install
+	change "install the Docker engine and compose plugin from Docker's apt repository (sudo)" docker_install
 fi
 
 # 3. mise itself, at the pinned version.
@@ -445,43 +481,43 @@ installed_mise="$(mise_installed_version)"
 if [ "$installed_mise" = "${MISE_VERSION#v}" ]; then
 	step "mise $MISE_VERSION already at $MISE_BIN"
 else
-	change "install mise $MISE_VERSION to $MISE_BIN from https://mise.run (was: ${installed_mise:-none})" install_mise
+	change "install mise $MISE_VERSION to $MISE_BIN from https://mise.run (was: ${installed_mise:-none}) (sudo)" install_mise
 fi
 
 # 4. The service user and the monitor's folders.
 if user_ready; then
 	step "service user $MONITOR_USER already in the docker group"
 else
-	change "create service user $MONITOR_USER (system, no login, in the docker group)" user_make
+	change "create service user $MONITOR_USER (system, no login, in the docker group) (sudo)" user_make
 fi
 
 if dirs_ready; then
 	step "$MONITOR_DIR, gatus and ntfy already owned by $MONITOR_USER"
 else
-	change "create $MONITOR_DIR with gatus and ntfy, owned by $MONITOR_USER" dirs_make
+	change "create $MONITOR_DIR with gatus and ntfy, owned by $MONITOR_USER (sudo)" dirs_make
 fi
 
-# 5. The checkout's tools through mise, as the user who ran sudo. Each step counts only when it
-# would change something: the trust check is read only.
+# 5. The checkout's tools through mise. Each step counts only when it would change something: the
+# trust check is read only.
 trust_needed=0
-trust_out="$(mise_as_user "$REPO_DIR" trust --show 2>/dev/null || true)"
+trust_out="$(mise_run "$REPO_DIR" trust --show 2>/dev/null || true)"
 if ! grep -q ': trusted$' <<< "$trust_out"; then
 	trust_needed=1
 fi
 install_needed=$trust_needed
-if [ -n "$(mise_as_user "$REPO_DIR" ls --missing 2>/dev/null || true)" ]; then
+if [ -n "$(mise_run "$REPO_DIR" ls --missing 2>/dev/null || true)" ]; then
 	install_needed=1
 fi
 
 if [ "$trust_needed" -eq 1 ]; then
-	change "as $RUN_USER in $REPO_DIR: mise trust" mise_as_user "$REPO_DIR" trust
+	change "$RUN_USER in $REPO_DIR: mise trust" mise_run "$REPO_DIR" trust
 else
-	step "checkout's mise config already trusted by $RUN_USER"
+	step "checkout's mise config already trusted"
 fi
 if [ "$install_needed" -eq 1 ]; then
-	change "as $RUN_USER in $REPO_DIR: mise install" mise_as_user "$REPO_DIR" install
+	change "$RUN_USER in $REPO_DIR: mise install" mise_run "$REPO_DIR" install
 else
-	step "mise tools already installed for $RUN_USER"
+	step "mise tools already installed"
 fi
 
 # 6. The Gatus config from the health files.
@@ -493,13 +529,28 @@ if ! systemd_present; then
 elif systemctl is-enabled --quiet docker; then
 	step "docker already enabled at boot"
 else
-	change "systemctl enable docker" systemctl enable docker
+	change "systemctl enable docker (sudo)" sudo systemctl enable docker
 fi
 
-# 8. What to run next.
+# 8. ufw: open exactly the two ports this stack publishes, and only when ufw is active.
+if ! command -v ufw >/dev/null 2>&1; then
+	echo "ufw: not installed, nothing to open"
+elif ! ufw_state="$(ufw_listing)" || ! grep -q '^Status: active' <<< "$ufw_state"; then
+	echo "ufw: inactive, so no port was opened"
+else
+	for port in "$GATUS_PORT" "$NTFY_PORT"; do
+		if grep -Eq "^${port}/tcp[[:space:]]+ALLOW" <<< "$ufw_state"; then
+			step "ufw already allows ${port}/tcp"
+		else
+			change "ufw: allow ${port}/tcp (the monitor's port) (sudo)" sudo ufw allow "${port}/tcp"
+		fi
+	done
+fi
+
+# 9. What to run next.
 echo ""
 echo "Start the monitor from $REPO_DIR:"
-echo "  docker compose -f $COMPOSE_FILE up -d"
+echo "  sudo docker compose -f $COMPOSE_FILE up -d"
 echo "Gatus: http://$MONITOR_BIND:$GATUS_PORT   ntfy: http://$MONITOR_BIND:$NTFY_PORT"
 echo "changes: $CHANGES"
 exit 0
