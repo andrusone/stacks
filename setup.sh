@@ -26,10 +26,11 @@
 #   and prints the command to run.
 # - ufw: if it is active, allows exactly GATUS_PORT and NTFY_PORT (tcp) when not already allowed, and
 #   says so. If it is inactive, changes nothing and says so.
-# - --check changes nothing and needs no sudo prompt: it lists each item as ok or missing and exits
-#   non-zero if anything is missing. --dry-run prints every step and changes nothing.
+# - --check changes nothing and needs no sudo prompt: it lists each item as ok or missing (the Docker
+#   daemon too) and exits non-zero if anything is missing. --dry-run prints every step and changes nothing.
 # - Last, it prints the two addresses as "once started" and asks "Start the monitor now? [Y/n]" (yes by
-#   default). It starts the monitor only on a yes at a terminal; --yes, no terminal and --dry-run never do.
+#   default), or says "monitor already running" and asks nothing. It starts the monitor only on a yes at
+#   a terminal; --yes, no terminal and --dry-run never do.
 # - Every machine change goes through change(), which --dry-run skips. The last line is changes: n.
 # change() runs the step functions indirectly through "$@", which shellcheck cannot see.
 # shellcheck disable=SC2329
@@ -323,6 +324,25 @@ docker_ready() {
 	command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
 }
 
+# Docker daemon answers: docker info, or sudo -n when not in the docker group. Read only.
+docker_daemon_ready() {
+	if [[ " $(id -nG) " == *" docker "* ]]; then
+		docker info >/dev/null 2>&1
+	else
+		sudo -n docker info >/dev/null 2>&1
+	fi
+}
+
+# Monitor containers running? Read only; sudo -n in --check and --dry-run (no prompt).
+compose_running() {
+	local sudo_cmd=(sudo) ids
+	if [ "$CHECK" -eq 1 ] || [ "$DRY_RUN" -eq 1 ]; then
+		sudo_cmd=(sudo -n)
+	fi
+	ids="$(cd "$REPO_DIR" && "${sudo_cmd[@]}" docker compose -f "$COMPOSE_FILE" ps --status running -q 2>/dev/null || true)"
+	[ -n "$ids" ]
+}
+
 # Docker's own apt repository, the official route. Its published signing key is read and checked
 # against the fingerprint above before apt trusts it. Nothing is generated.
 docker_install() {
@@ -457,6 +477,10 @@ ufw_listing() {
 # at a real terminal. --yes, no terminal and --dry-run never start; they print the command instead.
 start_offer() {
 	local answer="" cmd="sudo docker compose -f $COMPOSE_FILE up -d"
+	if compose_running; then
+		echo "monitor already running: its containers are up, so nothing is started and no change is counted"
+		return 0
+	fi
 	if [ "$DRY_RUN" -eq 1 ]; then
 		echo "[dry-run] would ask: Start the monitor now? [Y/n]; on yes, run from $REPO_DIR: $cmd"
 		return 0
@@ -498,6 +522,12 @@ run_check() {
 		report ok "docker and compose plugin" "$(command -v docker)"
 	else
 		report missing "docker and compose plugin" "not found"
+	fi
+	if docker_daemon_ready; then
+		report ok "docker daemon" "answers"
+	else
+		echo "docker daemon: not running"
+		MISSING+=("docker daemon")
 	fi
 
 	if [ ! -f "$ENV_FILE" ]; then
