@@ -6,15 +6,17 @@
 # of the stacks repo: ./compose/forge-vm/setup.sh (it calls sudo itself for each step that needs it).
 #
 # - Refuses a bare root login, and stops with a plain message if not Ubuntu (apt).
-# - Settles the values in compose/forge-vm/.env before any other change (ST93): each is asked for with
-#   its default (Enter accepts); an environment variable of the same name skips its prompt; --yes takes
-#   every default; a rerun offers the stored values; no answer and no default stops naming the value.
-#   The defaults and checks are in default_for and valid_answer. The file is written mode 600, only when
-#   a value differs, and no password is ever printed.
-# - Preflight, after the values: the image's packages (git, curl, ca-certificates, gnupg, cifs-utils,
-#   ufw, openssh-server, sudo; none is installed here), /data a mounted filesystem separate from /, and
-#   FORGE_DATA /data or under it. Otherwise it stops and prints the line that fixes it. It never creates
-#   a network mount, never formats or partitions a disk.
+# - Settles the values in compose/forge-vm/.env (ST93): each is asked for with its default (Enter
+#   accepts); an environment variable of the same name skips its prompt; --yes takes every default; a
+#   rerun with every value already in the file asks nothing (ST105); no answer and no default stops
+#   naming the value. The defaults and checks are in default_for and valid_answer. The password is made
+#   only after the preflight. The file is written mode 600, only when a value differs, and no password
+#   is ever printed.
+# - Preflight, after the values and before the file is written: the image's packages (git, curl,
+#   ca-certificates, gnupg, cifs-utils, ufw, openssh-server, sudo; none is installed here), /data a
+#   mounted filesystem separate from /, and FORGE_DATA /data or under it. Otherwise it stops and prints
+#   the line that fixes it, with nothing written. It never creates a network mount, never formats or
+#   partitions a disk.
 # - Installs only what the image lacks, each when missing: the Docker engine and compose plugin from
 #   Docker's apt repository (the signing key must have Docker's published fingerprint); mise at
 #   MISE_VERSION; the service user FORGE_USER with FORGE_UID and FORGE_GID (system user, no login, in
@@ -107,6 +109,7 @@ declare -A STORED=()
 CHANGES=0
 MISSING=()
 ENV_PRESENT=0
+KEEP_STORED=0
 
 step() { echo "[step] $*"; }
 
@@ -234,7 +237,7 @@ settle() {
 	local name=$1 def answer=""
 	if [ -n "${!name:-}" ]; then
 		ENV_VAL[$name]="${!name}"
-	else
+	elif [ "$KEEP_STORED" -eq 0 ]; then
 		def="${ENV_VAL[$name]:-}"
 		if [ -z "$def" ]; then def="$(default_for "$name")"; fi
 		if [ "$MODE" = run ] && [ "$ASSUME_YES" -eq 0 ]; then
@@ -245,6 +248,7 @@ settle() {
 			else
 				printf '%s [%s]: ' "$name" "${def:-no default}" >&2
 				read -r answer || true
+				[ -t 0 ] || echo >&2
 			fi
 		fi
 		if [ -z "$answer" ]; then answer="$def"; fi
@@ -282,13 +286,25 @@ render_env() {
 	done < "$ENV_EXAMPLE"
 }
 
-# Settles every value, then writes the env file (mode 600, from a temp file) only when one differs from
-# the stored one. A stop (no answer and no default, a bad value) exits before anything is written.
+# Settles the values in memory, before the preflight. When the env file already holds a valid value for
+# every key, nothing is asked (ST105): a rerun reads the file and goes on. Otherwise each value is asked
+# for, with the stored one as its default. The password is settled later, after the preflight, so a stop
+# there generates none. A stop here (no answer and no default, a bad value) exits before anything is written.
+settle_values() {
+	local name
+	read_env
+	if [ -f "$ENV_FILE" ] && env_values_ok; then KEEP_STORED=1; fi
+	for name in "${ENV_KEYS[@]}"; do
+		[ "$name" = FORGE_ADMIN_PASSWORD ] && continue
+		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
+	done
+}
+
+# Writes the env file (mode 600, from a temp file) only when a value differs from the stored one.
 write_env_file() {
 	local tmp name same=1
-	read_env
+	settle FORGE_ADMIN_PASSWORD || { echo "changes: $CHANGES"; exit 0; }
 	for name in "${ENV_KEYS[@]}"; do
-		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
 		[ "${STORED[$name]:-}" = "${ENV_VAL[$name]}" ] || same=0
 	done
 	if [ -f "$ENV_FILE" ] && [ "$same" -eq 1 ]; then
@@ -475,8 +491,8 @@ if [ "$MODE" = check ] && ! os_is_ubuntu; then
 	MISSING+=("ubuntu")
 fi
 
-# The values (ST93): asked for with defaults, then written to the env file when they differ from it.
-# --check only reads the file and changes nothing.
+# The values (ST93): settled in memory first (ST105), so the preflight can read them; --check only reads
+# the file and changes nothing.
 if [ "$MODE" = check ]; then
 	read_env
 	if [ -f "$ENV_FILE" ]; then
@@ -488,12 +504,12 @@ if [ "$MODE" = check ]; then
 		MISSING+=(".env")
 	fi
 else
-	write_env_file
+	settle_values
 	ENV_PRESENT=1
 	set_globals
 fi
 
-# Preflight (before any further change): the image's packages, the data disk, the data path.
+# Preflight (before any change, and before .env is written): the image's packages, the data disk, the data path.
 for package in "${IMAGE_PACKAGES[@]}"; do
 	need "package $package" "not on the image: the golden image should have it; install it by hand, then rerun" \
 		package_installed "$package"
@@ -502,6 +518,12 @@ if [ "$ENV_PRESENT" -eq 1 ]; then
 	need "data disk" "/data is not a separate mounted disk. $FIX_DATA" data_is_mount
 	need "FORGE_DATA" "must be /data or a folder under it, without .. : $FORGE_DATA" data_path_ok
 	need "service user id" "user $FORGE_USER already exists with another id; fix it by hand, then rerun" user_id_ok
+fi
+
+# Writes .env only now that the preflight has passed (a stop above wrote nothing and made no password).
+if [ "$MODE" != check ]; then
+	write_env_file
+	set_globals
 fi
 
 if [ "$MODE" = check ] && [ "$ENV_PRESENT" -eq 0 ]; then
