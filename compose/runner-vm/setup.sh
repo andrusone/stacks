@@ -8,9 +8,10 @@
 # - Refuses root. Stops if not Ubuntu, or if the image lacks curl, gpg, sudo, ufw or ca-certificates
 #   (named; nothing is installed for them). Installs only Docker, mise, the service user and the data
 #   folder, each only when missing.
-# - Reads .env with a plain loop, never sourced. Missing: copies .env.example and exits 1. An empty
-#   required value, or an address that is not IPv4 (iptables would refuse the block, so ufw would load
-#   no rules), stops the run by name. The registration token is never read, printed or written.
+# - Settles the values in compose/runner-vm/.env before any other change (ST95): each is asked for with its
+#   default (Enter accepts); an environment variable of the same name skips its prompt; --yes takes every
+#   default; no answer and no default stops naming the value. Addresses must be IPv4 (iptables would refuse
+#   the block). The registration token is typed hidden, or is a file's first line; it is never printed.
 # - Firewall (FG-FR-05, ufw): SSH allowed in if a rule covers it; default deny in, allow out; host
 #   traffic to TRUENAS_ADDR and PROXMOX_ADDR denied on every port; job containers' traffic dropped to
 #   the same addresses in DOCKER-USER, through a marked block in /etc/ufw/after.rules. ufw is enabled
@@ -27,7 +28,8 @@ set -euo pipefail
 MISE_VERSION=v2026.11.8
 
 usage() {
-	echo "usage: ./compose/runner-vm/setup.sh [--dry-run | --check]"
+	echo "usage: ./compose/runner-vm/setup.sh [--yes | --dry-run | --check]"
+	echo "  --yes       take every default without asking"
 	echo "  --check     say whether the VM is ready; changes nothing, no sudo prompt"
 	echo "  --dry-run   print every step, change nothing"
 }
@@ -39,10 +41,12 @@ halt() {
 
 DRY_RUN=0
 CHECK=0
+ASSUME_YES=0
 for arg in "$@"; do
 	case "$arg" in
 		--dry-run) DRY_RUN=1 ;;
 		--check) CHECK=1 ;;
+		--yes) ASSUME_YES=1 ;;
 		*)
 			usage >&2
 			exit 2
@@ -70,25 +74,27 @@ UFW_AFTER_RULES=/etc/ufw/after.rules
 BLOCK_BEGIN="# BEGIN runner-vm blocks (stacks setup.sh, FG-FR-05): managed by setup.sh, do not edit"
 BLOCK_END="# END runner-vm blocks"
 IMAGE_TOOLS=(curl gpg sudo ufw)
-# Every value except DOCKER_GID, which this script fills in.
-REQUIRED_KEYS=(RUNNER_USER RUNNER_UID RUNNER_GID RUNNER_DATA RUNNER_NAME FORGE_URL TRUENAS_ADDR PROXMOX_ADDR)
+# The values the script asks for (ST95). DOCKER_GID is not asked: this script fills it in once Docker is installed.
+ENV_KEYS=(RUNNER_USER RUNNER_UID RUNNER_GID RUNNER_DATA RUNNER_NAME FORGE_URL RUNNER_REGISTRATION_TOKEN TRUENAS_ADDR PROXMOX_ADDR)
 
 CHANGES=0
 MISSING=()
 FW_UNREAD=0
 SSH_PORT=22
 declare -A ENV_VAL=()
-RUNNER_USER=""
-RUNNER_UID=""
-RUNNER_GID=""
+declare -A STORED=()
 DOCKER_GID=""
-RUNNER_DATA=""
-TRUENAS_ADDR=""
-PROXMOX_ADDR=""
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 step() { echo "[step] $*"; }
+
+# A stop while settling values: a real run exits 1; --dry-run says what it would stop on and returns 1.
+stop_or_note() {
+	[ "$DRY_RUN" -eq 1 ] || { echo "setup.sh: $*" >&2; exit 1; }
+	echo "[dry-run] a real run would stop: $*"
+	return 1
+}
 
 # The only place a machine change happens. --dry-run prints it and skips it.
 change() {
@@ -136,38 +142,120 @@ priv_read() {
 
 # --- the env file ----------------------------------------------------------
 
-# Reads KEY=value lines with a plain loop. Never sourced, so nothing in it runs.
+# Reads the values from the env file, if there is one, with a plain loop. Never sourced.
 read_env() {
-	local key value
-	while IFS='=' read -r key value || [ -n "$key" ]; do
-		[[ $key == \#* || -z $key ]] && continue
-		ENV_VAL[$key]="${value%$'\r'}"
+	local line key value want
+	[ -f "$ENV_FILE" ] || return 0
+	while IFS= read -r line || [ -n "$line" ]; do
+		line="${line%$'\r'}"
+		case "$line" in
+			'' | \#*) continue ;;
+		esac
+		key="${line%%=*}"
+		value="${line#*=}"
+		if [[ " ${ENV_KEYS[*]} DOCKER_GID " == *" $key "* ]]; then ENV_VAL[$key]="$value"; fi
 	done < "$ENV_FILE"
-	RUNNER_USER="${ENV_VAL[RUNNER_USER]:-}"
-	RUNNER_UID="${ENV_VAL[RUNNER_UID]:-}"
-	RUNNER_GID="${ENV_VAL[RUNNER_GID]:-}"
-	DOCKER_GID="${ENV_VAL[DOCKER_GID]:-}"
-	RUNNER_DATA="${ENV_VAL[RUNNER_DATA]:-}"
-	TRUENAS_ADDR="${ENV_VAL[TRUENAS_ADDR]:-}"
-	PROXMOX_ADDR="${ENV_VAL[PROXMOX_ADDR]:-}"
+	for want in "${ENV_KEYS[@]}" DOCKER_GID; do
+		STORED[$want]="${ENV_VAL[$want]:-}"
+	done
 }
 
-# The problems on one line: required values that are empty, and addresses that are not IPv4. Never
-# prints a value. Empty when every value is fine.
+# Copies the values into the script's names (RUNNER_USER and the rest), once settled.
+set_globals() {
+	local name
+	for name in "${ENV_KEYS[@]}" DOCKER_GID; do printf -v "$name" '%s' "${ENV_VAL[$name]:-}"; done
+}
+
+# The default of a value: a fixed one, one cheap attempt (RUNNER_NAME: the host name), or none
+# (FORGE_URL, the addresses and the token are the owner's).
+default_for() {
+	case "$1" in
+		RUNNER_USER) echo runner ;;
+		RUNNER_UID | RUNNER_GID) echo 1200 ;;
+		RUNNER_DATA) echo /srv/runner ;;
+		RUNNER_NAME) hostname -s 2>/dev/null || true ;;
+	esac
+}
+
+# One word with no spaces; ids are digits; addresses are IPv4 (iptables would refuse the block);
+# FORGE_URL is http(s)://host:port with no trailing slash.
+valid_answer() {
+	case "$1" in
+		RUNNER_UID | RUNNER_GID) [[ $2 =~ ^[0-9]+$ ]] ;;
+		*_ADDR) [[ $2 =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$ ]] ;;
+		FORGE_URL) [[ $2 =~ ^https?://[^[:space:]]*[^/[:space:]]$ ]] ;;
+		*) [[ $2 =~ ^[^[:space:]]+$ ]] ;;
+	esac
+}
+
+# Settles one value into ENV_VAL. An environment variable of the same name wins, with no prompt.
+# Otherwise asks, with the stored or default value as the default; no answer (or no terminal) takes
+# it. The token is typed hidden: it is a file's first line when the answer names a file.
+settle() {
+	local name=$1 def="" answer=""
+	if [ -n "${!name:-}" ]; then
+		ENV_VAL[$name]="${!name}"
+	else
+		def="${ENV_VAL[$name]:-}"
+		[ -n "$def" ] || def="$(default_for "$name")"
+		if [ "$ASSUME_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ "$CHECK" -eq 0 ]; then
+			if [ "$name" = RUNNER_REGISTRATION_TOKEN ]; then
+				printf '%s (typed, not shown, or a file holding it; Enter keeps the stored one): ' "$name" >&2
+				read -rs answer || answer=""
+				echo >&2
+				if [ -f "$answer" ]; then answer="$(head -n 1 "$answer" | tr -d '\r')"; fi
+			else
+				printf '%s [%s]: ' "$name" "${def:-no default}" >&2
+				read -r answer || answer=""
+			fi
+		fi
+		[ -n "$answer" ] || answer="$def"
+		if [ -z "$answer" ]; then
+			stop_or_note "$name has no default here: set it in the environment or in $ENV_FILE" || return 1
+		fi
+		ENV_VAL[$name]="$answer"
+	fi
+	if ! valid_answer "$name" "${ENV_VAL[$name]}"; then
+		stop_or_note "$name is not valid (one word; ids are digits; addresses are IPv4; FORGE_URL is http://host:port with no trailing slash)" || return 1
+	fi
+}
+
+# The env file's text: the template with the settled values filled in, comments kept.
+render_env() {
+	local line key
+	while IFS= read -r line || [ -n "$line" ]; do
+		key="${line%%=*}"
+		if [[ $line == *=* && $key =~ ^[A-Z_]+$ ]]; then echo "$key=${ENV_VAL[$key]:-}"; else echo "$line"; fi
+	done < "$ENV_EXAMPLE"
+}
+
+# Settles every value, then writes the env file (mode 600, from a temp file) only when one differs from
+# the stored one. A stop (no answer and no default, a bad value) exits before anything is written.
+write_env_file() {
+	local tmp name same=1
+	for name in "${ENV_KEYS[@]}"; do
+		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
+		[ "${STORED[$name]:-}" = "${ENV_VAL[$name]}" ] || same=0
+	done
+	if [ -f "$ENV_FILE" ] && [ "$same" -eq 1 ]; then
+		step "$ENV_FILE already has these values"
+		return 0
+	fi
+	tmp="$(mktemp)"
+	render_env > "$tmp"
+	change "write $ENV_FILE (mode 600; the registration token is not shown)" install -m 600 "$tmp" "$ENV_FILE"
+	rm -f "$tmp"
+}
+
+# The names of the values that are empty or not valid, comma separated; empty when all are. Names only,
+# never a value: the token is a secret.
 env_problem_list() {
-	local name problems=()
-	for name in "${REQUIRED_KEYS[@]}"; do
-		if [ -z "${ENV_VAL[$name]:-}" ]; then
-			problems+=("$name")
-		fi
+	local name out=""
+	for name in "${ENV_KEYS[@]}"; do
+		if ! valid_answer "$name" "${ENV_VAL[$name]:-}"; then out+="$name, "; fi
 	done
-	for name in TRUENAS_ADDR PROXMOX_ADDR; do
-		if [ -n "${ENV_VAL[$name]:-}" ] && ! [[ ${ENV_VAL[$name]} =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$ ]]; then
-			problems+=("$name (not an IPv4 address)")
-		fi
-	done
-	local IFS=', '
-	echo "${problems[*]}"
+	out="${out%, }"
+	echo "$out"
 }
 
 # --- preflight and steps ---------------------------------------------------
@@ -481,8 +569,9 @@ run_check() {
 		problems="file"
 	else
 		read_env
+		set_globals
 		problems="$(env_problem_list)"
-		verdict "compose/runner-vm/.env" "every required value set" "not set: $problems" test -z "$problems"
+		verdict "compose/runner-vm/.env" "every value set and valid" "empty or not valid: $problems" test -z "$problems"
 		verdict "DOCKER_GID" "set" "empty; setup.sh writes the docker group id into it" test -n "$DOCKER_GID"
 	fi
 
@@ -546,28 +635,11 @@ preflight
 step "checkout: $REPO_DIR"
 step "mise version (from workbench/bootstrap/mise.version): $MISE_VERSION"
 
-# 1. The env file. Without it, copy the template and stop before anything else.
-if [ ! -f "$ENV_FILE" ]; then
-	if [ ! -f "$ENV_EXAMPLE" ]; then
-		halt "missing $ENV_EXAMPLE, the template for the env file"
-	fi
-	change "copy $ENV_EXAMPLE to $ENV_FILE (mode 600)" install -m 600 "$ENV_EXAMPLE" "$ENV_FILE"
-	echo "Fill in these variables in $ENV_FILE, then run ./compose/runner-vm/setup.sh again:"
-	grep -E '^[A-Z_]+=' "$ENV_EXAMPLE" | cut -d= -f1 | sed 's/^/  /'
-	if [ "$DRY_RUN" -eq 1 ]; then
-		echo "[dry-run] stops here: $ENV_FILE has no values yet"
-		echo "changes: $CHANGES"
-		exit 0
-	fi
-	echo "changes: $CHANGES"
-	exit 1
-fi
-
+# 1. The values: settled before any other change (ST95), then written to the env file only when one differs.
+[ -f "$ENV_EXAMPLE" ] || halt "missing $ENV_EXAMPLE, the template for the env file"
 read_env
-problems="$(env_problem_list)"
-if [ -n "$problems" ]; then
-	halt "set these in $ENV_FILE: $problems"
-fi
+write_env_file
+set_globals
 
 # 2. Docker's engine and compose plugin, when missing.
 if docker_ready; then

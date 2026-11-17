@@ -175,7 +175,7 @@ Do not delete the `stacks` folder to start over: your `.env` lives in it and git
 
 ## 5. Runner VM: make the token
 
-Make the registration token on the forge's page, logged in as the admin: **Settings**, then **Actions**, then **Runners**, then **create new runner**. Copy the token it shows; you will paste it into the runner VM's `.env` in section 6.
+Make the registration token on the forge's page, logged in as the admin: **Settings**, then **Actions**, then **Runners**, then **create new runner**. Copy the token it shows; the runner VM's setup script asks for it in section 6.
 
 ## 6. Runner VM: send the repo, fill in one file, set it up, start it
 
@@ -207,13 +207,7 @@ git clone stacks.bundle stacks      # git, on the runner VM: makes the stacks fo
 cd stacks      # cd, on the runner VM
 ```
 
-```
-cp compose/runner-vm/.env.example compose/runner-vm/.env      # cp, on the runner VM
-```
-
-```
-nano compose/runner-vm/.env      # nano, on the runner VM: fill in the values from the table below, save and exit
-```
+There is no file to edit by hand: the setup script in the next step asks for each value in the table below. Enter accepts the default shown; a variable set in the environment for that run skips its question. The answers are written to `compose/runner-vm/.env` (mode 600), and the token is never printed.
 
 The variables:
 
@@ -224,25 +218,21 @@ The variables:
 | `RUNNER_GID` | The group id of `RUNNER_USER`. | `1001` | no |
 | `DOCKER_GID` | The group id of the `docker` group on this VM. Leave it empty: the setup script fills it in the first time it runs. | (empty) | no |
 | `RUNNER_DATA` | The folder on the VM where the runner keeps its state. | `/srv/runner` | no |
-| `RUNNER_NAME` | The name the runner shows on the forge's page. | `runner-vm` | no |
-| `FORGE_URL` | The forge's address, the same value as in the forge VM's `.env`. | `http://192.168.1.60:3000` | no |
-| `RUNNER_REGISTRATION_TOKEN` | The one-time token from section 5. The runner uses it once to register. | the token from the forge's page | **yes** |
-| `TRUENAS_ADDR` | TrueNAS's address. The runner must not reach it; the setup script blocks it. | `192.168.1.20` | no |
-| `PROXMOX_ADDR` | The Proxmox API's address. The runner must not reach it; the setup script blocks it. | `192.168.1.10` | no |
+| `RUNNER_NAME` | The name the runner shows on the forge's page. | `runner-vm` (the VM's host name, the default) | no |
+| `FORGE_URL` | The forge's address, the same value as in the forge VM's `.env`, no trailing slash. No default: you type it. | `http://192.168.1.60:3000` | no |
+| `RUNNER_REGISTRATION_TOKEN` | The one-time token from section 5. The runner uses it to register. Typed hidden, or the path of a file whose first line is the token. No default. | the token from the forge's page | **yes** |
+| `TRUENAS_ADDR` | TrueNAS's address. The runner must not reach it; the setup script blocks it. No default: you type it. | `192.168.1.20` | no |
+| `PROXMOX_ADDR` | The Proxmox API's address. The runner must not reach it; the setup script blocks it. No default: you type it. | `192.168.1.10` | no |
 
-The token is a secret. Paste it into this file only.
+The token is a secret. The script never prints it. If you leave it empty, the script asks for it again on its next run, so keep it until the runner has registered.
 
-Run the setup script as your normal user; it calls `sudo` itself. It checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, blocks outbound traffic to `TRUENAS_ADDR` and `PROXMOX_ADDR`, sets restart on boot, and fills in `DOCKER_GID` in `.env`:
-
-```
-./compose/runner-vm/setup.sh      # bash, on the runner VM, as your normal user: checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, blocks outbound traffic to TRUENAS_ADDR and PROXMOX_ADDR, sets restart on boot, fills in DOCKER_GID
-```
-
-If the script says it created `compose/runner-vm/.env` and exits with status 1, you skipped the copy above: fill in the file, then run the same script again:
+Run the setup script as your normal user; it calls `sudo` itself. It asks for the values above first, then checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, blocks outbound traffic to `TRUENAS_ADDR` and `PROXMOX_ADDR`, sets restart on boot, and fills in `DOCKER_GID` in `.env`:
 
 ```
-./compose/runner-vm/setup.sh      # bash, on the runner VM, as your normal user: the same script, run again after filling in .env
+./compose/runner-vm/setup.sh      # bash, on the runner VM, as your normal user: asks for the values, then checks the VM, installs Docker and the repo's tools with mise, creates the service user and folders, blocks outbound traffic to TRUENAS_ADDR and PROXMOX_ADDR, sets restart on boot, fills in DOCKER_GID
 ```
+
+If a value is missing and there is no terminal to answer at, the script stops before it changes anything and names the value. Run it again with the value set in the environment, or in a terminal.
 
 Run it once more to see that nothing is left to change:
 
