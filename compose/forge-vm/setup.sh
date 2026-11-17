@@ -433,7 +433,7 @@ user_make() {
 	fi
 	if ! id -u "$FORGE_USER" >/dev/null 2>&1; then
 		sudo useradd --system --uid "$FORGE_UID" --gid "$FORGE_GID" --no-create-home \
-			--shell /usr/sbin/nologin "$FORGE_USER"
+			--shell /usr/sbin/nologin --key SYS_UID_MAX=$((FORGE_UID + 1)) "$FORGE_USER"
 	fi
 	if ! getent group docker >/dev/null; then
 		sudo groupadd --system docker

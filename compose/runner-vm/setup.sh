@@ -360,7 +360,7 @@ user_make() {
 	fi
 	if ! id -u "$RUNNER_USER" >/dev/null 2>&1; then
 		sudo useradd --system --uid "$RUNNER_UID" --gid "$RUNNER_GID" --no-create-home \
-			--shell /usr/sbin/nologin "$RUNNER_USER"
+			--shell /usr/sbin/nologin --key SYS_UID_MAX=$((RUNNER_UID + 1)) "$RUNNER_USER"
 	fi
 	sudo usermod -aG docker "$RUNNER_USER"
 }
