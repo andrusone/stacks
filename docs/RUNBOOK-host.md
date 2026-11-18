@@ -10,7 +10,7 @@ On your own computer, in your local stacks checkout:
 
 ```
 git bundle create stacks.bundle main      # git, on your own computer: packs the main branch into one file
-scp stacks.bundle youruser@192.168.1.50:  # scp, on your own computer: copies the file to the host's home folder (use your host's address and user)
+scp stacks.bundle youruser@192.168.1.50:~/  # scp, on your own computer: copies the file to the host's home folder (use your host's address and user)
 ```
 
 Then, over your session on the host:
@@ -23,6 +23,7 @@ cd stacks                                # cd, on the host
 ## 2. Prepare the host
 
 ```
+cd ~/stacks   # cd, on the host: a new login starts in your home folder, not in stacks
 ./host/prepare.sh      # bash, on the host, as your normal user (never root): installs Docker's engine and compose plugin from Docker's own apt repository, adds you to the docker group, enables Docker at boot where systemd runs; calls sudo itself for each change
 ```
 
@@ -37,6 +38,7 @@ The docker group applies only at a new login, so log out of the host and log in 
 ## 4. Run the smoke test
 
 ```
+cd ~/stacks   # cd, on the host: a new login starts in your home folder, not in stacks
 ./host/smoke.sh      # bash, on the host: starts one throwaway busybox container until docker compose ps reports it healthy (tool: docker compose), prints the verdict, then removes it with docker compose down -v; it uses sudo only while you are not yet in the docker group
 ```
 
