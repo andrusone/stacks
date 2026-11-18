@@ -1,0 +1,16 @@
+# Throwaway smoke stack for host/smoke.sh (SK-FR-09, ST117). One small container
+# with a healthcheck, pinned by tag. Nothing here is a secret (HL-NFR-02).
+# host/smoke.sh removes it with down -v; start it by hand with:
+#   docker compose -f host/smoke-compose.yml up -d --wait
+
+services:
+  smoke:
+    image: busybox:1.36
+    init: true
+    command: ["sh", "-c", "exec tail -f /dev/null"]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 1s
