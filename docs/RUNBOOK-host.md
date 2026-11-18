@@ -26,13 +26,13 @@ cd stacks                                # cd, on the host
 ./host/prepare.sh      # bash, on the host, as your normal user (never root): installs Docker's engine and compose plugin from Docker's own apt repository, adds you to the docker group, enables Docker at boot where systemd runs; calls sudo itself for each change
 ```
 
-The script stops, changing nothing, if the system is not apt-based or if Docker's key does not have Docker's published fingerprint.
+The script stops, changing nothing, if you run it as root, if the system is not Ubuntu, if sudo, curl or gpg is missing, or if Docker's key does not have Docker's published fingerprint.
 
 You see one `[step]` or `[change]` line per item, then a last line `changes: n`. The first run has `[change]` lines and `changes:` above 0. Run it again: the rerun ends `changes: 0`. A rerun is safe at any time.
 
 ## 3. Log out and in
 
-The docker group applies only at a new login, so log out of the host and log in again (tools: `exit`, then `ssh` from your own computer). Or, in the same shell only, run `newgrp docker` (tool: `newgrp`), which opens a shell that has the group. Then run `./host/prepare.sh` once more and check it ends `changes: 0`.
+The docker group applies only at a new login, so log out of the host and log in again (tools: `exit`, then `ssh` from your own computer). Or, in the same shell only, run `newgrp docker` (tool: `newgrp`), which opens a shell that has the group.
 
 ## 4. Run the smoke test
 
