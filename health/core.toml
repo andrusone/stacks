@@ -1,0 +1,8 @@
+# Core node core-a (OC12, CORE-FR-04): its right answer is a DNS lookup of the
+# known internal host against the node's own address. The address is the
+# documentation address 192.0.2.10, the zone fixture's forge.
+host = "core-a"
+service = "core-a:53"
+dns_name = "forge.core.example.test"
+dns_expect = "192.0.2.10"
+needs = []

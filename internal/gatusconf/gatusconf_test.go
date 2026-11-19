@@ -245,3 +245,32 @@ func TestNamesUniqueAndSearchable(t *testing.T) {
 		}
 	}
 }
+
+// A DNS stack's right answer is a DNS query for its name, sent to its service,
+// with a body condition on its address; the other endpoints are as before.
+func TestDNSRightAnswer(t *testing.T) {
+	src := "host = \"core-a\"\nservice = \"core-a:53\"\ndns_name = \"forge.core.example.test\"\ndns_expect = \"192.0.2.10\"\nneeds = []\n"
+	st, probs := healthfile.Parse("core.toml", src)
+	if len(probs) != 0 {
+		t.Fatalf("fixture has problems: %v", probs)
+	}
+	got, err := Generate([]healthfile.Stack{st})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "  - name: \"core: right answer\"\n" +
+		"    group: \"core\"\n" +
+		"    url: \"core-a:53\"\n" +
+		"    dns:\n" +
+		"      query-name: \"forge.core.example.test\"\n" +
+		"      query-type: \"A\"\n" +
+		"    interval: 10s\n" +
+		"    conditions:\n" +
+		"      - \"[BODY] == pat(*192.0.2.10*)\"\n"
+	if !strings.Contains(got, want) {
+		t.Fatalf("DNS endpoint missing:\n%s", got)
+	}
+	if strings.Count(got, "dns:") != 1 || strings.Contains(got, "[STATUS]") {
+		t.Fatalf("only the right answer is DNS, with no status condition:\n%s", got)
+	}
+}
