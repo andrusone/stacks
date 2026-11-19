@@ -4,7 +4,7 @@ shellcheck = "0.11.0"
 
 [tasks.check]
 description = "The repo contract (D06): vet, test, the health files (HL-FR-06) and their generated Gatus config, and shellcheck on the monitor scripts"
-run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health", "go run ./cmd/health check health-starter", "bash compose/check-bundle-clone.sh", "shellcheck compose/up.sh compose/down.sh compose/prove.sh compose/forge/up.sh compose/forge/down.sh compose/forge/backup.sh compose/forge/restore.sh compose/runner/up.sh compose/runner/down.sh compose/forge/drill.sh compose/check-bundle-clone.sh setup.sh compose/forge-vm/setup.sh compose/runner-vm/setup.sh host/prepare.sh host/smoke.sh"]
+run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health", "go run ./cmd/health check health-starter", "bash compose/check-bundle-clone.sh", "shellcheck compose/up.sh compose/down.sh compose/prove.sh compose/forge/up.sh compose/forge/down.sh compose/forge/backup.sh compose/forge/restore.sh compose/runner/up.sh compose/runner/down.sh compose/forge/drill.sh compose/check-bundle-clone.sh setup.sh compose/forge-vm/setup.sh compose/runner-vm/setup.sh host/prepare.sh host/smoke.sh compose/core/up.sh compose/core/down.sh compose/core/prove.sh compose/core/bind/check.sh compose/core/bind/prove-zone.sh"]
 
 [tasks.monitor-up]
 description = "Bring up the local monitor (Gatus, ntfy, two probes) with Docker"
@@ -45,3 +45,15 @@ run = "bash compose/runner/up.sh"
 [tasks.runner-down]
 description = "Remove the local runner container; keeps the data folder"
 run = "bash compose/runner/down.sh"
+
+[tasks.core-up]
+description = "Bring up the core stack (ST174, CORE-FR-01): each compose/core/*/ check.sh, then its compose file. Zone fixture on BIND, CORE_BIND_PORT (default 5300). Needs Docker"
+run = "bash compose/core/up.sh"
+
+[tasks.core-down]
+description = "Remove what core-up made: containers, networks and volumes of compose/core"
+run = "bash compose/core/down.sh"
+
+[tasks.core-prove]
+description = "Run every compose/core prove-*.sh (ST174: zone answers from BIND). Needs core-up"
+run = "bash compose/core/prove.sh"

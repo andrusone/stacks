@@ -1,0 +1,13 @@
+# BIND for the core stack (ST174, CORE-FR-01 MVP 1). Port 53 inside the
+# container, CORE_BIND_PORT (default 5300) on the host, loopback only.
+services:
+  bind:
+    image: internetsystemsconsortium/bind9:9.18
+    container_name: core-bind
+    ports:
+      - "127.0.0.1:${CORE_BIND_PORT:-5300}:53/udp"
+      - "127.0.0.1:${CORE_BIND_PORT:-5300}:53/tcp"
+    volumes:
+      - ./named.conf:/etc/bind/named.conf:ro
+      - ./zone:/etc/bind/zone:ro
+    restart: unless-stopped
