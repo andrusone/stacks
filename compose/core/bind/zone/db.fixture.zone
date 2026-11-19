@@ -1,0 +1,20 @@
+; Fixture zone for CORE-FR-01 MVP 1 (ST174). Shape copied from the network
+; zone; names and addresses are invented (RFC 5737 192.0.2.0/24), so this
+; file is not kept in step with the real zone.
+$ORIGIN core.example.
+$TTL 300
+
+@   IN  SOA ns1.core.example. hostmaster.core.example. (
+        2026111901  ; Serial - YYYYMMDDnn
+        3600        ; Refresh
+        900         ; Retry
+        1209600     ; Expire
+        300         ; Negative cache TTL
+)
+
+    IN  NS  ns1.core.example.
+
+ns1     IN  A       192.0.2.21
+gw      IN  A       192.0.2.1
+nas     IN  A       192.0.2.20
+www     IN  CNAME   nas.core.example.
