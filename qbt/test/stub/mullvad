@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Test stub for the mullvad CLI (ST182, QBT-FR-02). State lives in $STUB_STATE:
+#   status  "connected" or "disconnected"
+#   relay   the selected relay name
+# Supports: status -v, connect, disconnect, relay set location <name>.
+set -u
+
+state="${STUB_STATE:?STUB_STATE must name a state folder}"
+mkdir -p "${state}"
+
+read_state() {
+  if [[ -f "${state}/$1" ]]; then
+    cat "${state}/$1"
+  fi
+}
+
+case "${1:-}" in
+status)
+  if [[ "$(read_state status)" == "connected" ]]; then
+    printf 'Connected\n  Relay: %s\n' "$(read_state relay)"
+  else
+    printf 'Disconnected\n'
+  fi
+  ;;
+connect)
+  printf 'connected' >"${state}/status"
+  ;;
+disconnect)
+  printf 'disconnected' >"${state}/status"
+  ;;
+relay)
+  if [[ "${2:-}" != "set" || "${3:-}" != "location" || -z "${4:-}" ]]; then
+    echo "stub mullvad: unsupported: relay $*" >&2
+    exit 2
+  fi
+  printf '%s' "$4" >"${state}/relay"
+  ;;
+*)
+  echo "stub mullvad: unsupported: $*" >&2
+  exit 2
+  ;;
+esac

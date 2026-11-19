@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Test stub for curl (ST182, QBT-FR-02). It only answers the Mullvad health
+# check: it fails with 22 when the relay the mullvad stub is connected to is
+# listed in $STUB_STATE/bad-relays, and otherwise prints the Mullvad answer.
+# Arguments are ignored.
+set -u
+
+state="${STUB_STATE:?STUB_STATE must name a state folder}"
+
+status="$(cat "${state}/status" 2>/dev/null || true)"
+relay="$(cat "${state}/relay" 2>/dev/null || true)"
+
+if [[ "${status}" == "connected" && -n "${relay}" ]] &&
+  grep -qxF "${relay}" "${state}/bad-relays" 2>/dev/null; then
+  echo "curl: (22) The requested URL returned error: 403" >&2
+  exit 22
+fi
+
+echo "You are connected to Mullvad"
