@@ -39,7 +39,7 @@ func Generate(stacks []healthfile.Stack) (string, error) {
 	b.WriteString("endpoints:\n")
 	for _, st := range stacks {
 		fmt.Fprintf(&b, "  # %s\n", st.ID)
-		endpoint(&b, st, "host", "icmp://"+st.Host, []string{"[CONNECTED] == true"})
+		endpoint(&b, st, "host", "icmp://"+st.Host, "", []string{"[CONNECTED] == true"})
 
 		if len(st.Needs) == 0 {
 			fmt.Fprintf(&b, "  # %s: no dependencies declared, so its dependencies answer is n/a\n", st.ID)
@@ -49,23 +49,32 @@ func Generate(stacks []healthfile.Stack) (string, error) {
 			if !ok {
 				return "", fmt.Errorf("%s needs %q, which is not a stack in the health files", st.ID, need)
 			}
-			endpoint(&b, st, "dependencies ("+need+")", "tcp://"+dep.Service, []string{"[CONNECTED] == true"})
+			endpoint(&b, st, "dependencies ("+need+")", "tcp://"+dep.Service, "", []string{"[CONNECTED] == true"})
 		}
 
-		endpoint(&b, st, "service", "tcp://"+st.Service, []string{"[CONNECTED] == true"})
+		endpoint(&b, st, "service", "tcp://"+st.Service, "", []string{"[CONNECTED] == true"})
 
 		conds, err := rightAnswer(st)
 		if err != nil {
 			return "", err
 		}
-		endpoint(&b, st, "right answer", st.Request, conds)
+		if st.DNSName != "" {
+			// A DNS stack is asked its name at its DNS server, which is its service.
+			endpoint(&b, st, "right answer", st.Service, st.DNSName, conds)
+		} else {
+			endpoint(&b, st, "right answer", st.Request, "", conds)
+		}
 	}
 	return b.String(), nil
 }
 
 // rightAnswer returns the conditions for a stack's correct reply: the status
-// when the file gives one, and the text when it gives one.
+// when the file gives one, and the text when it gives one. A DNS stack's right
+// answer is an answer that contains its address.
 func rightAnswer(st healthfile.Stack) ([]string, error) {
+	if st.DNSName != "" {
+		return []string{"[BODY] == pat(*" + st.DNSExpect + "*)"}, nil
+	}
 	var conds []string
 	if st.HasStatus {
 		conds = append(conds, fmt.Sprintf("[STATUS] == %d", st.ExpectStatus))
@@ -81,12 +90,18 @@ func rightAnswer(st healthfile.Stack) ([]string, error) {
 
 // endpoint writes one Gatus endpoint for a stack: its name, `<stack>: <answer>`
 // (HL-FR-01, so a search by stack or by answer finds it), the stack as its
-// group, the URL to check, the conditions, and the phone alert.
-func endpoint(b *strings.Builder, st healthfile.Stack, answer, url string, conds []string) {
+// group, the URL to check, the conditions, and the phone alert. A non-empty
+// dnsName makes it a DNS query for that name, sent to url.
+func endpoint(b *strings.Builder, st healthfile.Stack, answer, url, dnsName string, conds []string) {
 	name := st.ID + ": " + answer
 	fmt.Fprintf(b, "  - name: %s\n", yamlString(name))
 	fmt.Fprintf(b, "    group: %s\n", yamlString(st.ID))
 	fmt.Fprintf(b, "    url: %s\n", yamlString(url))
+	if dnsName != "" {
+		b.WriteString("    dns:\n")
+		fmt.Fprintf(b, "      query-name: %s\n", yamlString(dnsName))
+		b.WriteString("      query-type: \"A\"\n")
+	}
 	b.WriteString("    interval: 10s\n")
 	b.WriteString("    conditions:\n")
 	for _, c := range conds {

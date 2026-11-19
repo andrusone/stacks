@@ -6,11 +6,16 @@
 // strings in double quotes (no escapes), integers, and one-line lists of such
 // strings. Any other line is a problem with its line number. A problem with no
 // line of its own (a missing key, a bad file name) is reported at line 1.
+//
+// A stack has one of two forms (CORE-FR-04): a request form, with request and
+// an expectation (expect_status or expect_text), or a DNS form, with dns_name
+// and dns_expect (an IP address the answer must contain) in place of request.
 package healthfile
 
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -39,12 +44,15 @@ func (p Problem) String() string {
 }
 
 // Stack is one parsed health file. Fields that the file did not set are zero.
-// HasStatus and HasText say which expectation the file gave.
+// HasStatus and HasText say which expectation the file gave. A DNS stack has
+// DNSName and DNSExpect set and no Request.
 type Stack struct {
 	ID           string
 	Host         string
 	Service      string
 	Request      string
+	DNSName      string
+	DNSExpect    string
 	ExpectStatus int
 	ExpectText   string
 	HasStatus    bool
@@ -82,7 +90,7 @@ func Parse(name, src string) (Stack, []Problem) {
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
 		switch key {
-		case "host", "service", "request", "expect_text", "expect_status", "needs":
+		case "host", "service", "request", "dns_name", "dns_expect", "expect_text", "expect_status", "needs":
 		default:
 			add(lineNo, "unknown key %q", key)
 			continue
@@ -103,6 +111,16 @@ func Parse(name, src string) (Stack, []Problem) {
 			st.Service = stringValue(add, lineNo, key, val)
 		case "request":
 			st.Request = stringValue(add, lineNo, key, val)
+		case "dns_name":
+			st.DNSName = stringValue(add, lineNo, key, val)
+			if st.DNSName == "" && val == `""` {
+				add(lineNo, "dns_name: empty")
+			}
+		case "dns_expect":
+			st.DNSExpect = stringValue(add, lineNo, key, val)
+			if st.DNSExpect != "" && net.ParseIP(st.DNSExpect) == nil {
+				add(lineNo, "dns_expect: want an IP address")
+			}
 		case "expect_text":
 			st.ExpectText = stringValue(add, lineNo, key, val)
 			st.HasText = true
@@ -129,13 +147,31 @@ func Parse(name, src string) (Stack, []Problem) {
 		}
 	}
 
-	for _, k := range []string{"host", "service", "request", "needs"} {
+	for _, k := range []string{"host", "service", "needs"} {
 		if !seen[k] {
 			add(1, "missing key %q", k)
 		}
 	}
-	if !seen["expect_status"] && !seen["expect_text"] {
-		add(1, "needs expect_status or expect_text")
+	if seen["dns_name"] || seen["dns_expect"] {
+		// The DNS form: exactly one form, and its own two keys.
+		if seen["request"] {
+			add(1, "request and dns_name are two forms: give one")
+		}
+		for _, k := range []string{"dns_name", "dns_expect"} {
+			if !seen[k] {
+				add(1, "missing key %q", k)
+			}
+		}
+		if seen["expect_status"] || seen["expect_text"] {
+			add(1, "expect_status and expect_text belong to request, not dns_name")
+		}
+	} else {
+		if !seen["request"] {
+			add(1, "missing key %q", "request")
+		}
+		if !seen["expect_status"] && !seen["expect_text"] {
+			add(1, "needs expect_status or expect_text")
+		}
 	}
 	sort.SliceStable(probs, func(i, j int) bool { return probs[i].Line < probs[j].Line })
 	return st, probs
