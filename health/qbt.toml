@@ -1,0 +1,7 @@
+# Downloader VM qbt (OC13, QBT-FR-03): its right answer is the qBittorrent
+# WebUI replying on its port. 8080 is qBittorrent's default WebUI port.
+host = "qbt"
+service = "qbt:8080"
+request = "http://qbt:8080/"
+expect_status = 200
+needs = []
