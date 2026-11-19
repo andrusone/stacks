@@ -1,0 +1,25 @@
+# Unbound for the core stack (ST178, CORE-FR-02 MVP 1). Host network so the
+# resolver binds 127.0.0.1 on the host: CORE_DNS_PORT (default 5353). The
+# template unbound.conf gets its port at start; the image's own unbound.sh
+# keeps a config that already exists.
+services:
+  unbound:
+    image: mvance/unbound:1.22.0
+    container_name: core-unbound
+    network_mode: host
+    environment:
+      - CORE_DNS_PORT=${CORE_DNS_PORT:-5353}
+    command:
+      - sh
+      - -c
+      - sed "s/@PORT@/$$CORE_DNS_PORT/" /etc/unbound/unbound.template > /opt/unbound/etc/unbound/unbound.conf && exec /unbound.sh
+    volumes:
+      - ./unbound.conf:/etc/unbound/unbound.template:ro
+    # The image's own check asks port 53; this one asks CORE_DNS_PORT.
+    healthcheck:
+      test: ["CMD-SHELL", "drill -p $$CORE_DNS_PORT @127.0.0.1 nas.core.example A >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
