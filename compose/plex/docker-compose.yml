@@ -1,0 +1,33 @@
+# Plex Media Server and Kometa (ST207, PLEX-FR-02 MVP 1). Check with
+# mise run plex-config. Nothing here is started by a script yet; MVP 2 brings it up.
+#
+# The pins are in .env.example, by tag and digest: PLEX_IMAGE and KOMETA_IMAGE.
+# Changing a pin is the upgrade. KOMETA_IMAGE is the tag matching
+# network:stacks/plex/pins.env (KOMETA_VERSION 2.4.8; the image tag is v2.4.8).
+#
+# Data: bind mounts of the folders named in .env.example, relative to this file.
+# Kometa does not start Plex; it runs on its own schedule through its own entrypoint.
+
+services:
+  plex:
+    image: ${PLEX_IMAGE}
+    container_name: plex
+    ports:
+      - "32400:32400"
+    volumes:
+      - ${PLEX_DATA}:/config
+      - ${PLEX_MEDIA}:/data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:32400/identity"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+
+  kometa:
+    image: ${KOMETA_IMAGE}
+    container_name: kometa
+    volumes:
+      - ${KOMETA_CONFIG}:/config
+    restart: unless-stopped
