@@ -4,7 +4,7 @@ shellcheck = "0.11.0"
 
 [tasks.check]
 description = "The repo contract (D06): vet, test, the health files (HL-FR-06) and their generated Gatus config, and shellcheck on the monitor scripts"
-run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health", "go run ./cmd/health check health-starter", "bash compose/check-bundle-clone.sh", "shellcheck compose/up.sh compose/down.sh compose/prove.sh compose/forge/up.sh compose/forge/down.sh compose/forge/backup.sh compose/forge/restore.sh compose/runner/up.sh compose/runner/down.sh compose/forge/drill.sh compose/check-bundle-clone.sh setup.sh compose/forge-vm/setup.sh compose/runner-vm/setup.sh host/prepare.sh host/smoke.sh compose/core/up.sh compose/core/down.sh compose/core/prove.sh compose/core/bind/check.sh compose/core/bind/prove-zone.sh compose/core/chrony/prove-time.sh compose/core/unbound/prove-dns.sh qbt/ops/mullvad-health.sh qbt/ops/mullvad-relays.sh qbt/test/prove-rollover.sh qbt/test/stub/mullvad qbt/test/stub/curl", "if command -v docker >/dev/null 2>&1; then mise run plex-config; else echo 'skipped plex-config: no docker'; fi"]
+run = ["go vet ./...", "go test ./...", "go run ./cmd/health check health", "go run ./cmd/health generate health", "go run ./cmd/health check health-starter", "bash compose/check-bundle-clone.sh", "shellcheck compose/up.sh compose/down.sh compose/prove.sh compose/forge/up.sh compose/forge/down.sh compose/forge/backup.sh compose/forge/restore.sh compose/runner/up.sh compose/runner/down.sh compose/forge/drill.sh compose/check-bundle-clone.sh setup.sh compose/forge-vm/setup.sh compose/runner-vm/setup.sh host/prepare.sh host/smoke.sh compose/core/up.sh compose/core/down.sh compose/core/prove.sh compose/core/bind/check.sh compose/core/bind/prove-zone.sh compose/core/chrony/prove-time.sh compose/core/unbound/prove-dns.sh qbt/ops/mullvad-health.sh qbt/ops/mullvad-relays.sh qbt/test/prove-rollover.sh qbt/test/stub/mullvad qbt/test/stub/curl plex/check-plex.sh", "bash -n plex/check-plex.sh", "PYTHONPYCACHEPREFIX=${TMPDIR:-/tmp}/plex-pycache python3 -m py_compile plex/check-plex.py", "if command -v docker >/dev/null 2>&1; then mise run plex-config; else echo 'skipped plex-config: no docker'; fi"]
 
 [tasks.monitor-up]
 description = "Bring up the local monitor (Gatus, ntfy, two probes) with Docker"
@@ -61,6 +61,10 @@ run = "bash compose/core/prove.sh"
 [tasks.plex-config]
 description = "Check the Plex and Kometa compose file (ST207, PLEX-FR-02 MVP 1): it renders with the pins in .env.example. Needs Docker; starts nothing"
 run = "docker compose --env-file compose/plex/.env.example -f compose/plex/docker-compose.yml config --quiet && echo ok plex-config"
+
+[tasks.plex-prove]
+description = "Prove the moved plexcurator unit tests (ST206, PLEX-FR-01 MVP 1): the unchanged tests in plex/ with python3 unittest. No network; writes no bytecode"
+run = 'cd plex && if out=$(PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1); then echo "ok plex-prove $(printf "%s\n" "$out" | sed -n "s/^Ran \([0-9]*\) tests.*/\1/p") tests"; else printf "%s\n" "$out"; exit 1; fi'
 
 [tasks.qbt-prove]
 description = "Prove the Mullvad relay rollover (ST182, QBT-FR-02 MVP 1): the unchanged qbt/ops/mullvad-health.sh under mullvad and curl stubs in a temp folder it removes. No network"

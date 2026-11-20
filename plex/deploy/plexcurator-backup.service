@@ -1,0 +1,17 @@
+[Unit]
+Description=plexcurator database backup
+After=network-online.target remote-fs.target
+
+[Service]
+Type=oneshot
+User=@USER@
+SupplementaryGroups=kometa
+Environment=PLEXCURATOR_CONFIG=@CONFIG@
+Environment="PLEX_APPDATA_DIR=@APPDATA@"
+Environment=BACKUP_RECEIPT_HELPER=@RECEIPT_HELPER@
+Environment=BACKUP_ENCRYPTION_HELPER=@ENCRYPTION_HELPER@
+Environment=BACKUP_RECEIPTS_LOG=@RECEIPTS_LOG@
+Environment=KOMETA_CONFIG_PATH=/etc/kometa/config.yml
+Environment=KOMETA_COLLECTIONS_PATH=/etc/kometa/collections
+WorkingDirectory=@INSTALL@
+ExecStart=/usr/bin/python3 -m plexcurator backup

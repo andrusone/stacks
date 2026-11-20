@@ -1,0 +1,84 @@
+# plexcurator configuration. build-plex-node.sh copies this to /etc/plexcurator/config.toml if none exists
+# and stops so you can fill it in; `plexcurator validate` (or build-plex-node.sh --check) checks it.
+# Simple on purpose: only decisions that are yours. Everything else (log paths, retries, probe tools,
+# backup retention, name templates, alert file) has a default in code.
+# Values that say "..." are REQUIRED.
+
+# What the nightly run may do. One switch replaces the old three safety gates.
+#   observe  collect data only (sync, watchlist, discovery, logs, probe, create folder tree); moves and deletes nothing
+#   organize observe + move/rename watched, rated and watchlisted movies into the managed folder
+#   reclaim  organize + delete to free space (the four lifecycle rules below)
+# `plexcurator --dry-run <anything>` prints what would happen and changes nothing, in every mode.
+mode = "observe"
+
+# Unidentified movies are recorded in ALERT without failing the nightly unit, or fail it with "fail".
+alert_unidentified = "warn"
+
+# A movie counts as watched once its peak play percent reaches this. Never reverts.
+watched_pct = 50
+
+[plex]
+url   = "http://127.0.0.1:32400"
+token = "..."
+# "configured" reads libraries whose locations overlap folders below; use "all" or a title list to override.
+libraries = "configured"
+# path_map = { "/data/movies" = "/nas/plex/Movies" }   # only if Plex sees different paths than this host
+
+[radarr]
+url     = "http://127.0.0.1:7878"
+api_key = "..."
+# path_map = { "/movies" = "/nas/plex/Movies" }        # only if Radarr sees different paths than this host
+
+[storage]
+min_free_pct    = 35      # start reclaiming when free space drops below this
+reclaim_to_pct  = 40      # ...and keep going until this much is free
+backup_dir      = "..."   # database backups; a NAS path, any writable directory
+# measure_path = "/nas/plex"   # volume whose free space is measured; default = folders.managed
+
+[folders]
+# Fully owned by plexcurator: Watchlist/ (flat) and Watched/<video>/<audio>/<0-5>/ are created here.
+# Must also be a folder of a Plex movie library (the validator checks).
+managed = "/nas/plex/Curated"
+
+# Anywhere; each must be a Plex movie library folder. Unmanaged = data is collected, nothing is
+# changed, except that watched / rated / watchlisted movies are moved out. lifecycle = true lets the
+# stale_unmanaged rule delete from that folder.
+[[folders.unmanaged]]
+path      = "/nas/plex/Movies"
+lifecycle = true
+# Optional per-folder age (only when lifecycle = true), e.g. 61 days:
+# stale_days = 61
+# Optional folder override to reclaim stale movies regardless of free space:
+# age_only = true
+
+# Classes. First match wins from the highest min_width down (order in the file does not matter).
+# Matched on width because scope films are short (3840x1600, 1920x800). Optional min_height too.
+# Adding 8k = add a line + `plexcurator reclassify` (no re-probe). The lowest class must have min_width = 0.
+# The key is also the folder name.
+[video]
+4khd   = { min_width = 3000 }
+1080hd = { min_width = 1700 }
+720hd  = { min_width = 1200 }
+sd     = { min_width = 0 }
+
+# Best audio stream's channel count. Lowest class must have min_channels = 0.
+[audio]
+7ch = { min_channels = 7 }
+5ch = { min_channels = 5 }
+2ch = { min_channels = 0 }
+
+# HDR types in file names, e.g. [4khd 7ch HDR10+]. Optional: these are the defaults; uncomment one to change it.
+# Priority is fixed: Dolby Vision (dv) > HDR10+ (hdr10plus) > HDR10 (hdr10) > HLG (hlg) > SDR (no tag).
+# A tag must be unique, with no spaces or brackets; changing one renames the curated files on the next organize run.
+# [hdr.dv]
+# tag = "DV"
+
+# Deletion. Rules run in this order, each only if more space is still needed; remove a name to turn it off.
+# Within a rule the oldest date goes first (rating date, first watchlist date, born date).
+# Never configurable: movies rated 3-5 stars are never deleted; nothing watched or rated is touched
+# by the age rules; movies without a trustworthy id (`unidentified`) are never moved, renamed or deleted.
+[lifecycle]
+stale_days = 365
+# watchlist_stale_days = 365   # default: follows stale_days
+rules = ["one_star", "two_star", "stale_watchlist", "stale_unmanaged"]
+# age_only = ["stale_unmanaged"]  # opt-in; first real run alerts with the list to confirm

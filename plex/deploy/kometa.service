@@ -1,0 +1,18 @@
+[Unit]
+Description=Run Kometa collection automation
+After=network-online.target plexmediaserver.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=kometa
+Group=kometa
+WorkingDirectory=@KOMETA_STATE@
+Environment=HOME=@KOMETA_STATE@
+UMask=0027
+ExecStart=@KOMETA_VENV@/bin/python @KOMETA_APP@/kometa.py --config @KOMETA_CONFIG@ --read-only-config --run
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=@KOMETA_LOGS@ @KOMETA_STATE@

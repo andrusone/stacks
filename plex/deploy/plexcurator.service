@@ -1,0 +1,13 @@
+[Unit]
+Description=plexcurator nightly run (sync, watchlist, discover, logs, organize, reclaim; what it may do is set by mode in the config)
+After=network-online.target remote-fs.target plexmediaserver.service
+RequiresMountsFor=@MOUNTS@
+
+[Service]
+Type=oneshot
+User=@USER@
+Environment=PLEXCURATOR_CONFIG=@CONFIG@
+WorkingDirectory=@INSTALL@
+ExecStart=/usr/bin/python3 -m plexcurator run
+# Exit 2 remains a failed unit for reclaim shortfalls and fail-mode unidentified alerts.
+Nice=10
