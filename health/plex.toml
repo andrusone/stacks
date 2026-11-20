@@ -1,0 +1,7 @@
+# Plex server (OC14, PLEX-FR-03): its right answer is Plex's own identity
+# endpoint replying. /identity is Plex's own answer that the server is up.
+host = "plex"
+service = "plex:32400"
+request = "http://plex:32400/identity"
+expect_status = 200
+needs = []
