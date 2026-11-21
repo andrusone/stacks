@@ -4,7 +4,7 @@ The steps to build the forge (FG-FR-15) and then the runner on two fresh VMs mad
 
 ## 0. What you supply, that no agent can
 
-- **Two VMs**, each cloned by you from the golden image and finished with the image's own `post-clone-server.sh`. The image's steps are in [REF-golden-image.md](REF-golden-image.md); this runbook does not repeat them. Write the addresses down: the forge's is `FORGE_BIND`, the runner's is the one you ssh to.
+- **Two VMs**, each cloned by you from the golden image, named and addressed with `hostbook`, and set up as [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 1 says. The image's steps are in [REF-golden-image.md](REF-golden-image.md); this runbook does not repeat them. Write the addresses down: the forge's is `FORGE_BIND`, the runner's is the one you ssh to.
 - **A second disk for the forge VM**, 20 GB to start, on TrueNAS iSCSI storage. You add it in Proxmox, format it and mount it at `/data` (section 3). Forgejo keeps its data on this disk, not on the NAS share.
 - **The forge admin's email address**, which the setup script asks you for in section 4. The admin password the script generates for you; you do not make one.
 - **The runner's one-time registration token**, made on the forge's page once the forge is up (section 5).
@@ -14,31 +14,17 @@ No secret is ever written to git or to a story. The secrets go in the `.env` fil
 
 ## 1. Make the two VMs
 
-Clone each VM from the golden image and finish it with `post-clone-server.sh`, as section 0 says.
+Clone each VM from the golden image, name and address it with `hostbook`, and set it up as section 0 says (the steps are in [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 1).
 
 Then, in the Proxmox web page, add the second disk to the forge VM only: the forge VM, **Hardware**, **Add**, **Hard Disk**, 20 GB, on the TrueNAS iSCSI storage. Start the forge VM. The runner VM gets no second disk.
 
 Go on to section 2.
 
-## 2. Send the repo to the forge VM and connect
+## 2. Get the repo onto the forge VM and connect
 
-Steps 2a and 2b run on your own computer, in your local stacks checkout. Step 2c opens the ssh session on the forge VM, and every command after it runs there.
+The forge VM clones the repo from the NAS share, so it needs no bundle, no `scp` and no key of yours. The share's clone must be on branch `main` (a CIFS share has no executable bit, so run from the VM's own clone, never from the share), as [RUNBOOK-host.md](RUNBOOK-host.md) section 1 and [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 2 say.
 
-### 2a. Pack the repo (on your own computer)
-
-```
-git bundle create stacks.bundle main      # git, on your own computer: packs the main branch into one file
-```
-
-### 2b. Copy the bundle to the forge VM (on your own computer)
-
-```
-scp stacks.bundle youruser@192.168.1.60:      # scp, on your own computer: copies the file to the VM's home folder; use the forge VM's address and user
-```
-
-The repo is private, so the VM cannot clone it and holds no key of yours; the bundle is how it gets the repo.
-
-### 2c. Connect to the forge VM (on your own computer)
+### 2a. Connect to the forge VM (on your own computer)
 
 ```
 ssh youruser@192.168.1.60      # ssh, on your own computer: opens a session on the forge VM; use its address and user
@@ -46,13 +32,17 @@ ssh youruser@192.168.1.60      # ssh, on your own computer: opens a session on t
 
 From here, every command runs in that ssh session, on the forge VM.
 
+### 2b. Clone the repo from the share (on the forge VM)
+
 ```
-git clone -b main stacks.bundle stacks      # git, on the forge VM: makes the stacks folder from the bundle's main branch (a bundle of main has no HEAD, so name the branch)
+git clone -b main /nas/projects/andrusone/stacks ~/stacks      # git, on the forge VM: makes the stacks folder from the share's main branch
 ```
 
 ```
-cd stacks      # cd, on the forge VM
+cd ~/stacks      # cd, on the forge VM
 ```
+
+The forge's backup folder, `/nas/cloud-backup/services/forge/backup`, is made by `host/nas-layout.sh`, run once as [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 2 says. Do not make it by hand.
 
 ## 3. Forge VM: format and mount the data disk
 
@@ -154,24 +144,14 @@ sudo docker compose -f compose/forge-vm/docker-compose.yml up -d      # docker c
 
 ### 4d. Updating the repo later
 
-On your own computer, in your local stacks checkout, make a new bundle and copy it to the forge VM:
+In the ssh session on the forge VM, the share's clone must be on `main` and up to date first, as [RUNBOOK-host.md](RUNBOOK-host.md) section 1 says. Then update the checkout from the share:
 
 ```
-git bundle create stacks.bundle main      # git, on your own computer: packs the main branch into one file
-```
-
-```
-scp stacks.bundle youruser@192.168.1.60:      # scp, on your own computer: copies the file to the VM's home folder
-```
-
-In the ssh session on the forge VM, update the checkout from the new bundle:
-
-```
-cd stacks      # cd, on the forge VM
+cd ~/stacks      # cd, on the forge VM
 ```
 
 ```
-git pull ~/stacks.bundle main      # git, on the forge VM: brings the new commits into the stacks folder
+git pull      # git, on the forge VM: brings the new commits from the share into the stacks folder
 ```
 
 Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
@@ -182,7 +162,7 @@ Make the registration token on the forge's page, logged in as the admin: **Setti
 
 ## 6. Runner VM: send the repo, fill in one file, set it up, start it
 
-The runner VM mounts nothing and has no second disk. Steps 6a and 6b run on your own computer, in your local stacks checkout.
+The runner VM mounts nothing and has no second disk. Steps 6a and 6b run on your own computer, in your local stacks checkout. The runner keeps the bundle because it cannot reach the NAS share (FG-FR-05), so it cannot clone from there.
 
 ### 6a. Pack the repo and copy it (on your own computer)
 
@@ -393,7 +373,7 @@ sudo mount /data      # mount, on the new forge VM: mounts the disk at /data
 findmnt /data      # findmnt, on the new forge VM: must print the disk with FSTYPE ext4; if not, do not go on
 ```
 
-4. **Get the repo and the env file.** Send the repo as in section 2 (the bundle is made on your own computer; the forge's own copy is gone and must not be used). Run the setup script again and answer its questions from the table in section 4a; the values already in `compose/forge-vm/.env` are the defaults, so Enter keeps them. `FORGE_UID` and `FORGE_GID` must be the same as before, because the files on the disk belong to those ids. `FORGE_ADMIN_PASSWORD` is used only if the admin user does not exist yet, so keep the stored value (Enter accepts it).
+4. **Get the repo and the env file.** Clone the repo from the share again as in section 2b (the forge VM's old copy is gone and must not be used; the share's clone must be on `main`). Run the setup script again and answer its questions from the table in section 4a; the values already in `compose/forge-vm/.env` are the defaults, so Enter keeps them. `FORGE_UID` and `FORGE_GID` must be the same as before, because the files on the disk belong to those ids. `FORGE_ADMIN_PASSWORD` is used only if the admin user does not exist yet, so keep the stored value (Enter accepts it).
 5. **Set up and start**, as in section 4b and 4c, each command in its own block, on the new forge VM:
 
 ```
