@@ -3,8 +3,8 @@
 // them and never writes.
 //
 // The file is the subset of TOML the repo uses: comments, `key = value` lines,
-// strings in double quotes (no escapes), integers, and one-line lists of such
-// strings. Any other line is a problem with its line number. A problem with no
+// strings in double quotes (no escapes), integers, true and false, and one-line
+// lists of such strings. Any other line is a problem with its line number. A problem with no
 // line of its own (a missing key, a bad file name) is reported at line 1.
 //
 // A stack has one of two forms (CORE-FR-04): a request form, with request and
@@ -57,6 +57,7 @@ type Stack struct {
 	ExpectText   string
 	HasStatus    bool
 	HasText      bool
+	Insecure     bool // insecure = true: the right-answer request skips certificate checks (DEV-FR-01)
 	Needs        []string
 	NeedsLine    int
 }
@@ -90,7 +91,7 @@ func Parse(name, src string) (Stack, []Problem) {
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
 		switch key {
-		case "host", "service", "request", "dns_name", "dns_expect", "expect_text", "expect_status", "needs":
+		case "host", "service", "request", "dns_name", "dns_expect", "expect_text", "expect_status", "insecure", "needs":
 		default:
 			add(lineNo, "unknown key %q", key)
 			continue
@@ -136,6 +137,14 @@ func Parse(name, src string) (Stack, []Problem) {
 			}
 			st.ExpectStatus = n
 			st.HasStatus = true
+		case "insecure":
+			switch val {
+			case "true":
+				st.Insecure = true
+			case "false":
+			default:
+				add(lineNo, "insecure: want true or false")
+			}
 		case "needs":
 			l, err := stringList(val)
 			if err != nil {

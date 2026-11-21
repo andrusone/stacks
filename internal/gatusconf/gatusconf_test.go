@@ -274,3 +274,32 @@ func TestDNSRightAnswer(t *testing.T) {
 		t.Fatalf("only the right answer is DNS, with no status condition:\n%s", got)
 	}
 }
+
+// The insecure folder holds dev-a, which says insecure = true and needs dev-b,
+// and dev-b, which says insecure = false.
+func TestInsecureGolden(t *testing.T) {
+	golden(t, "testdata/insecure", "testdata/insecure.golden")
+}
+
+// Only dev-a's right-answer endpoint gets the client block, and the block
+// sits at the endpoint's indentation.
+func TestInsecureRightAnswerOnly(t *testing.T) {
+	stacks, _, err := healthfile.LoadDir("testdata/insecure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Generate(stacks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(got, "    client:\n      insecure: true\n"); n != 1 {
+		t.Fatalf("want one client block, got %d:\n%s", n, got)
+	}
+	for _, ep := range strings.Split(got, "  - name: ")[1:] {
+		hasClient := strings.Contains(ep, "    client:\n")
+		isRight := strings.HasPrefix(ep, `"dev-a: right answer"`)
+		if hasClient != isRight {
+			t.Fatalf("client block on the wrong endpoint:\n  - name: %s", ep)
+		}
+	}
+}

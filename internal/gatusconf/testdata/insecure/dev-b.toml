@@ -1,0 +1,7 @@
+# DEV-FR-01: the same device kind without the key; its output must not change.
+host = "dev-b"
+service = "dev-b:443"
+request = "https://dev-b:443/"
+expect_status = 200
+insecure = false
+needs = []

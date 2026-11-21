@@ -1,0 +1,98 @@
+# Gatus config, generated from the health files (HL-FR-06). Do not edit: change the health files.
+# Gatus fills ${NTFY_URL} and ${NTFY_TOPIC} from its environment (HL-NFR-02).
+
+alerting:
+  ntfy:
+    url: "${NTFY_URL}"
+    topic: "${NTFY_TOPIC}"
+
+endpoints:
+  # dev-a
+  - name: "dev-a: host"
+    group: "dev-a"
+    url: "icmp://dev-a"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "dev-a: host"
+  - name: "dev-a: dependencies (dev-b)"
+    group: "dev-a"
+    url: "tcp://dev-b:443"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "dev-a: dependencies (dev-b)"
+  - name: "dev-a: service"
+    group: "dev-a"
+    url: "tcp://dev-a:443"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "dev-a: service"
+  - name: "dev-a: right answer"
+    group: "dev-a"
+    url: "https://dev-a:443/"
+    client:
+      insecure: true
+    interval: 10s
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "dev-a: right answer"
+  # dev-b
+  - name: "dev-b: host"
+    group: "dev-b"
+    url: "icmp://dev-b"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "dev-b: host"
+  # dev-b: no dependencies declared, so its dependencies answer is n/a
+  - name: "dev-b: service"
+    group: "dev-b"
+    url: "tcp://dev-b:443"
+    interval: 10s
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "dev-b: service"
+  - name: "dev-b: right answer"
+    group: "dev-b"
+    url: "https://dev-b:443/"
+    interval: 10s
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+        failure-threshold: 2
+        success-threshold: 1
+        send-on-resolved: true
+        description: "dev-b: right answer"
