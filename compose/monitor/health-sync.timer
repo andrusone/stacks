@@ -1,0 +1,10 @@
+# HL-FR-13 (ST242): every 5 minutes, one minute after boot. Starts health-sync.service.
+[Unit]
+Description=Run health-sync every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
