@@ -67,6 +67,14 @@ cat > "$stub/docker" <<'EOF'
 #!/usr/bin/env bash
 cat "$STUB_STATE/running" 2>/dev/null || true
 EOF
+# getent hosts NAME: answers unless a state file says the name fails (no-public: github.com; no-internal: the probe name).
+cat > "$stub/getent" <<'GETENT'
+#!/usr/bin/env bash
+echo "getent $*" >> "$STUB_LOG"
+[ "$1 $2" = "hosts github.com" ] && [ -e "$STUB_STATE/no-public" ] && exit 2
+[ "$1" = hosts ] && [ "$2" != github.com ] && [ -e "$STUB_STATE/no-internal" ] && exit 2
+exit 0
+GETENT
 printf '#!/usr/bin/env bash\nexit 0\n' > "$stub/apt-get"
 chmod +x "$stub"/*
 
@@ -232,6 +240,43 @@ reset_state
 run_setup CORE_ZONE_URL=git@github.com:andrusone -- --yes
 check "a git@ address with no repo exits 2" [ "$code" -eq 2 ]
 check "a git@ address with no repo is named" grep -qF 'CORE_ZONE_URL' <<<"$out"
+
+# 8. The resolver proof (ST267): two lines, the four combinations, one meaning line per no, exit 0 always
+reset_state
+run_setup -- --yes
+check "both resolve: exits 0" [ "$code" -eq 0 ]
+check "both resolve: github.com line" grep -qxF 'resolves github.com: yes' <<<"$out"
+check "both resolve: the default probe line" grep -qxF 'resolves ns1.core.andrusonline.com: yes' <<<"$out"
+check "both resolve: no meaning line" [ "$(grep -c -E '(public|internal) names fail' <<<"$out")" -eq 0 ]
+reset_state
+touch "$state/no-public"
+run_setup -- --yes
+check "public fails: exits 0" [ "$code" -eq 0 ]
+check "public fails: github.com no" grep -qxF 'resolves github.com: no' <<<"$out"
+check "public fails: internal yes" grep -qxF 'resolves ns1.core.andrusonline.com: yes' <<<"$out"
+check "public fails: says the VM's DNS is not set" grep -qxF "public names fail: the VM's DNS is not set" <<<"$out"
+reset_state
+touch "$state/no-internal"
+run_setup -- --yes
+check "internal fails: exits 0" [ "$code" -eq 0 ]
+check "internal fails: internal no" grep -qxF 'resolves ns1.core.andrusonline.com: no' <<<"$out"
+check "internal fails: says what it means" grep -qxF "internal names fail: the zone is not loaded yet or this node's resolver is not yet in use" <<<"$out"
+reset_state
+touch "$state/no-public" "$state/no-internal"
+run_setup -- --yes
+check "both fail: exits 0" [ "$code" -eq 0 ]
+check "both fail: two meaning lines" [ "$(grep -c -E '(public|internal) names fail' <<<"$out")" -eq 2 ]
+reset_state
+run_setup -- --dry-run
+check "dry run prints the proof" grep -qxF 'resolves github.com: yes' <<<"$out"
+# The probe name comes from CORE_PROBE_NAME in .env
+reset_state
+run_setup -- --yes
+echo "CORE_PROBE_NAME=ns2.core.example.test" >> "$cvm/.env"
+touch "$state/no-internal"
+run_setup bare -- --yes
+check "a CORE_PROBE_NAME in .env is the probe" grep -qxF 'resolves ns2.core.example.test: no' <<<"$out"
+check "a CORE_PROBE_NAME in .env is the probe in getent" grep -qxF 'getent hosts ns2.core.example.test' "$log"
 
 echo "setup.test: $pass passed, $fails failed"
 [ "$fails" -eq 0 ]

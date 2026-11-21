@@ -14,6 +14,8 @@
 #   zone-sync.service and zone-sync.timer into /etc/systemd/system and /etc/core/zone-sync.env, the timer
 #   enabled and started; a first zone sync through the service when BIND has no copy; mise run core-up
 #   with the node's address and LAN and its ports (BIND 5300, DNS 53, NTP 123), so the peer reaches 5300 only.
+# - Last, resolve_check: two lines saying whether this VM's resolver answers github.com and the internal probe
+#   (CORE_PROBE_NAME in .env). Read-only; it never changes the exit code.
 # - Ends "changes: n", the sum of every stage's changes. A second run ends "changes: 0".
 # - --dry-run prints every step, asks nothing (values from the environment or the defaults) and writes
 #   nothing. The change() wrapper is the only place a machine change happens.
@@ -100,4 +102,5 @@ run_host
 zone_units
 first_zone_sync
 core_up
+resolve_check
 echo "changes: $CHANGES"
