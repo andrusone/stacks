@@ -105,11 +105,18 @@ curl -d "hello" http://<MONITOR_BIND>:<NTFY_PORT>/<NTFY_TOPIC>      # curl, on t
 
 The message should arrive on the phone within seconds.
 
+## 4b. The outside heartbeat (silence alert)
+
+The monitor pings an outside service every 5 minutes while its own Gatus answers. If the monitor goes quiet, the outside service alerts you. Setup prints `heartbeat: on` or `heartbeat: off (set HEARTBEAT_URL)`.
+
+1. Make a free dead-man's-switch check at an outside service (any one that alerts on silence) with a **15 minute grace**.
+2. Put its URL in `compose/monitor/.env` as `HEARTBEAT_URL=<the URL>` (over the ssh session on the VM, not in git).
+3. Prove it: `sudo systemctl stop docker` on the VM. A message arrives within 15 minutes. Then `sudo systemctl start docker`.
+
 ## 5. What this does not cover
 
 - Beszel (the host's health stays "unknown" for now; the host check is only a network check).
 - The timer that pulls new checks from git.
-- The outside heartbeat that tells you if the monitor itself goes quiet.
 - Rebuilding the monitor alone from scratch.
 - Protection against a bad commit: a broken check file is not rejected yet.
 

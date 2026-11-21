@@ -4,8 +4,8 @@
 # so nothing is installed on this machine. The units go to a temp etc folder, the groups to a temp file, and the
 # monitor folders are temp folders; the temp folder is removed on exit. The origin (ST261): a path origin becomes SSH
 # with the key and is left alone without it, and an SSH origin is unchanged.
-# Checks: a first run installs both units (ExecStart and User= for this checkout), enables the timer and grants
-# the groups, counting changes; a second run counts 0; a dry run changes nothing; with no systemd it prints the
+# Checks: a first run installs the four units (ExecStart and User= for this checkout; the heartbeat's ExecStart is
+# its own script, ST257), enables both timers and grants the groups, counting changes; a second run counts 0; a dry run changes nothing; with no systemd it prints the
 # command and counts nothing; --check reports both ok after the first run and missing before it.
 # shellcheck disable=SC2034 # the variables set below are read by the sourced installer
 set -euo pipefail
@@ -47,17 +47,17 @@ report() {
 systemd_present() { [ "${NO_SYSTEMD:-0}" -ne 1 ]; }
 
 # The stubs. sudo runs the command as this user, except usermod, which the test records in a groups file that
-# the id stub reads back; systemctl is a stub on PATH that keeps the timer's state in a file.
+# the id stub reads back; systemctl is a stub on PATH that keeps each timer's state in a file ($TIMER_STATE-<unit>).
 export STUB_LOG="$tmp/stub.log" GROUPS_FILE="$tmp/groups" TIMER_STATE="$tmp/timer-enabled"
 : > "$STUB_LOG"
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/systemctl" <<'STUB'
 #!/usr/bin/env bash
-# Test stub for systemctl (ST247): logs changes; the timer is enabled when $TIMER_STATE exists.
+# Test stub for systemctl (ST247, ST257): logs changes; a timer is enabled when its state file exists.
 case "$1" in
 daemon-reload) echo "daemon-reload" >> "$STUB_LOG" ;;
-is-enabled | is-active) [ -f "$TIMER_STATE" ] ;;
-enable) shift; echo "enable $*" >> "$STUB_LOG"; touch "$TIMER_STATE" ;;
+is-enabled | is-active) [ -f "$TIMER_STATE-${!#}" ] ;;
+enable) shift; echo "enable $*" >> "$STUB_LOG"; touch "$TIMER_STATE-${!#}" ;;
 *) exit 2 ;;
 esac
 STUB
@@ -85,7 +85,8 @@ id() {
 # The checkout: the real unit files and script, and the monitor folders in temp.
 mkdir -p "$tmp/checkout/compose/monitor" "$tmp/monitor/gatus" "$tmp/etc/systemd/system"
 cp "$src/compose/monitor/health-sync.sh" "$src/compose/monitor/health-sync.service" \
-	"$src/compose/monitor/health-sync.timer" "$tmp/checkout/compose/monitor/"
+	"$src/compose/monitor/health-sync.timer" "$src/compose/monitor/heartbeat.service" \
+	"$src/compose/monitor/heartbeat.timer" "$tmp/checkout/compose/monitor/"
 cp "$src/compose/monitor/health-sync-install.sh" "$tmp/checkout/compose/monitor/"
 chmod 755 "$tmp/monitor" "$tmp/monitor/gatus"
 
@@ -112,14 +113,20 @@ CHANGES=0
 
 # 2. The first run installs and enables, and counts its changes.
 hs_run
-[ "$CHANGES" -eq 5 ] || fail "first run: expected 5 changes (2 units, reload, enable, groups), got $CHANGES"
+[ "$CHANGES" -eq 8 ] || fail "first run: expected 8 changes (4 units, reload, 2 enables, groups), got $CHANGES"
 svc="$tmp/etc/systemd/system/health-sync.service"
 grep -qx "ExecStart=$src/compose/monitor/health-sync.sh" "$svc" && fail "ExecStart points at the source checkout, not the test checkout"
 grep -qx "ExecStart=$tmp/checkout/compose/monitor/health-sync.sh" "$svc" || fail "ExecStart is not this checkout's script"
 grep -qx "User=$RUN_USER" "$svc" || fail "no User=$RUN_USER in the service"
 cmp -s "$tmp/etc/systemd/system/health-sync.timer" "$src/compose/monitor/health-sync.timer" || fail "timer unit differs from the checkout's file"
-[ -f "$TIMER_STATE" ] || fail "the timer was not enabled"
+hb="$tmp/etc/systemd/system/heartbeat.service"
+grep -qx "ExecStart=$tmp/checkout/compose/monitor/heartbeat.sh" "$hb" || fail "heartbeat ExecStart is not this checkout's heartbeat.sh"
+grep -qx "User=$RUN_USER" "$hb" || fail "no User=$RUN_USER in the heartbeat service"
+cmp -s "$tmp/etc/systemd/system/heartbeat.timer" "$src/compose/monitor/heartbeat.timer" || fail "heartbeat timer unit differs from the checkout's file"
+[ -f "$TIMER_STATE-health-sync.timer" ] || fail "the health-sync timer was not enabled"
+[ -f "$TIMER_STATE-heartbeat.timer" ] || fail "the heartbeat timer was not enabled"
 grep -q "^enable --now health-sync.timer$" "$STUB_LOG" || fail "enable --now not called: $(cat "$STUB_LOG")"
+grep -q "^enable --now heartbeat.timer$" "$STUB_LOG" || fail "enable --now heartbeat.timer not called"
 grep -qx docker "$GROUPS_FILE" || fail "$RUN_USER not added to docker"
 [ "$(stat -c %A "$MONITOR_DIR" | cut -c6)" = w ] || fail "$MONITOR_DIR not group-writable"
 [ "$(stat -c %A "$GATUS_DIR" | cut -c6)" = w ] || fail "$GATUS_DIR not group-writable"
@@ -146,7 +153,7 @@ grep -q "sudo systemctl enable --now health-sync.timer" "$tmp/nosystemd.out" || 
 # 6. --check before an install reports the timer and the user missing.
 HEALTH_SYNC_UNITS="$tmp/etc2/systemd/system"
 MISSING=()
-rm -f "$TIMER_STATE" "$GROUPS_FILE"
+rm -f "$TIMER_STATE"-* "$GROUPS_FILE"
 hs_check > "$tmp/check2.out"
 [ "${#MISSING[@]}" -eq 2 ] || fail "--check on a fresh machine: expected 2 missing, got ${MISSING[*]:-none}"
 

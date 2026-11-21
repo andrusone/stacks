@@ -5,6 +5,8 @@
 # monitor's group, and the monitor folders become group-writable with setgid (config.yaml, the marker).
 HEALTH_SYNC_UNITS="${HEALTH_SYNC_UNITS:-/etc/systemd/system}"
 HS_SRC="$REPO_DIR/compose/monitor"
+HS_UNITS=(health-sync.service health-sync.timer heartbeat.service heartbeat.timer)
+HS_TIMERS=(health-sync.timer heartbeat.timer)
 # The deploy key the pull uses (ST261, made by git-access --role prod) and the SSH address of the repo.
 HS_KEY="${HS_KEY:-$HOME/.ssh/id_ed25519_github}"
 HS_ORIGIN_SSH=git@github.com:andrusone/stacks.git
@@ -34,20 +36,26 @@ hs_origin() {
 
 # The unit text to install: ExecStart and User= filled in for this checkout.
 hs_unit_text() {
-	if [ "$1" != health-sync.service ]; then
+	if [ "${1##*.}" != service ]; then
 		cat "$HS_SRC/$1"
 		return 0
 	fi
-	sed -e "s|^ExecStart=.*|ExecStart=$HS_SRC/health-sync.sh|" \
+	sed -e "s|^ExecStart=.*|ExecStart=$HS_SRC/${1%.service}.sh|" \
 		-e "s|^Type=oneshot|Type=oneshot\nUser=$RUN_USER|" "$HS_SRC/$1"
 }
 
-# Read only: both units match what would be installed.
+# Read only: every unit matches what would be installed.
 hs_units_ok() {
 	local unit
-	for unit in health-sync.service health-sync.timer; do
+	for unit in "${HS_UNITS[@]}"; do
 		cmp -s <(hs_unit_text "$unit") "$HEALTH_SYNC_UNITS/$unit" 2>/dev/null || return 1
 	done
+}
+
+# Read only: every timer is enabled and running.
+hs_timers_on() {
+	local timer
+	for timer in "${HS_TIMERS[@]}"; do systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer" || return 1; done
 }
 
 hs_install_unit() {
@@ -75,23 +83,25 @@ hs_grant() {
 	sudo chmod 2775 "$MONITOR_DIR" "$GATUS_DIR"
 }
 
-# Installs the units that differ, then enables and starts the timer: one change per file, one for the
-# reload, one for the timer. A rerun counts none.
+# Installs the units that differ, then enables and starts each timer: one change per file, one for the
+# reload, one per timer. A rerun counts none.
 hs_units() {
-	local unit units_changed=0
-	step "health-sync: units and the timer"
-	for unit in health-sync.service health-sync.timer; do
+	local unit timer units_changed=0
+	step "health-sync and heartbeat: units and timers"
+	for unit in "${HS_UNITS[@]}"; do
 		if ! cmp -s <(hs_unit_text "$unit") "$HEALTH_SYNC_UNITS/$unit" 2>/dev/null; then
 			change "install $HEALTH_SYNC_UNITS/$unit (ExecStart and User= for this checkout) (sudo)" hs_install_unit "$unit"
 			units_changed=1
 		fi
 	done
 	if [ "$units_changed" -eq 1 ]; then change "systemctl daemon-reload (sudo)" sudo systemctl daemon-reload; fi
-	if systemctl is-enabled --quiet health-sync.timer 2>/dev/null && systemctl is-active --quiet health-sync.timer; then
-		step "health-sync.timer is enabled and running"
-	else
-		change "systemctl enable --now health-sync.timer (sudo)" sudo systemctl enable --now health-sync.timer
-	fi
+	for timer in "${HS_TIMERS[@]}"; do
+		if systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer"; then
+			step "$timer is enabled and running"
+		else
+			change "systemctl enable --now $timer (sudo)" sudo systemctl enable --now "$timer"
+		fi
+	done
 }
 
 # Without systemd nothing changes and the command is printed. The group grants apply at the next start.
@@ -118,9 +128,9 @@ hs_check() {
 	fi
 	if ! systemd_present; then
 		echo "health-sync timer: not applicable (no systemd)"
-	elif hs_units_ok && systemctl is-enabled --quiet health-sync.timer 2>/dev/null && systemctl is-active --quiet health-sync.timer; then
+	elif hs_units_ok && hs_timers_on; then
 		report ok "health-sync timer" "units current, enabled and running"
 	else
-		report missing "health-sync timer" "units not installed or current, or the timer is not enabled and running"
+		report missing "health-sync timer" "units not installed or current, or a timer is not enabled and running"
 	fi
 }

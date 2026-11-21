@@ -779,6 +779,8 @@ fi
 # 9. The addresses apply only once the monitor is started; then offer to start it.
 echo ""
 echo "Gatus: http://$MONITOR_BIND:$GATUS_PORT (once started)   ntfy: http://$MONITOR_BIND:$NTFY_PORT (once started)"
+# The outside heartbeat (ST257): on once HEARTBEAT_URL has a value in the env file.
+if grep -q '^HEARTBEAT_URL=.' "$ENV_FILE" 2>/dev/null; then echo "heartbeat: on"; else echo "heartbeat: off (set HEARTBEAT_URL)"; fi
 start_status=0
 start_offer || start_status=$?
 echo "changes: $CHANGES"
