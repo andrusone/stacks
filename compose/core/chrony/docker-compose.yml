@@ -7,7 +7,7 @@ services:
     container_name: core-chrony
     entrypoint: ["chronyd", "-x", "-n", "-f", "/etc/core-chrony/chrony.conf"]
     ports:
-      - "127.0.0.1:${CORE_NTP_PORT:-12300}:123/udp"
+      - "${CORE_LISTEN:-127.0.0.1}:${CORE_NTP_PORT:-12300}:123/udp"
     volumes:
       - ./chrony.conf:/etc/core-chrony/chrony.conf:ro
     restart: unless-stopped
