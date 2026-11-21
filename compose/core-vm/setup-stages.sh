@@ -24,7 +24,7 @@ hint() {
 		CORE_BIND) echo "this VM's IPv4 address" ;;
 		CORE_LAN) echo "the LAN as an IPv4 CIDR, for example 192.168.1.0/24" ;;
 		CORE_ADMIN) echo "the IPv4 address or CIDR allowed to SSH in" ;;
-		CORE_ZONE_URL) echo "an http(s) URL with an address, not a name, for example http://192.168.1.20/zone.git" ;;
+		CORE_ZONE_URL) echo "an http(s) URL with an address, not a name, for example http://192.168.1.20/zone.git; or an absolute path to a clone or bare repository, for example /nas/projects/andrusone/zone; or a file:// URL of one" ;;
 		CORE_ROLE) echo "primary or secondary" ;;
 		CORE_PEER) echo "the other node's IPv4 address; empty until it exists" ;;
 	esac
@@ -49,7 +49,7 @@ valid_value() {
 		CORE_BIND) [[ $v =~ ^$ip$ ]] ;;
 		CORE_LAN) [[ $v =~ ^$ip/[0-9]{1,2}$ ]] ;;
 		CORE_ADMIN) [[ $v =~ ^$ip(/[0-9]{1,2})?$ ]] ;;
-		CORE_ZONE_URL) [[ $v =~ ^https?://$ip(:[0-9]+)?(/[^[:space:]]*)?$ ]] ;;
+		CORE_ZONE_URL) [[ $v =~ ^https?://$ip(:[0-9]+)?(/[^[:space:]]*)?$ ]] || [[ $v == /* && -d $v ]] || [[ $v == file:///* && -d ${v#file://} ]] ;;
 		CORE_ROLE) [ "$v" = primary ] || [ "$v" = secondary ] ;;
 		CORE_PEER) [ -z "$v" ] || [[ $v =~ ^$ip$ ]] ;;
 	esac

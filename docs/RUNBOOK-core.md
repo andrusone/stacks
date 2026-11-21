@@ -25,12 +25,14 @@ It asks for these, with a default (Enter accepts):
 | `CORE_BIND` | this VM's address | the default-route address |
 | `CORE_LAN` | the LAN as a CIDR (DNS and NTP are open to it) | this address's /24 |
 | `CORE_ADMIN` | the address or CIDR allowed to SSH in | the machine you are logging in from |
-| `CORE_ZONE_URL` | the zone repository by address, never a name, for example `http://192.168.1.20/zone.git` | none: you give it |
+| `CORE_ZONE_URL` | the zone repository: by address, never a name, for example `http://192.168.1.20/zone.git`; or a folder path such as `/nas/projects/andrusone/zone`; or a `file://` URL of that folder | none: you give it |
 | `CORE_ROLE` | `primary` or `secondary` | `primary` |
 | `CORE_PEER` | the other node's address; leave empty until it exists | empty |
 | ports (not asked) | DNS on 53 and NTP on 123 open to `CORE_LAN`; BIND on 5300 open to `CORE_PEER` only | fixed |
 
 `CORE_ZONE_URL` is the `zone` repository's address on the owner's Git host until the forge exists. The setup refuses a name there, because the zone must load before DNS does.
+
+When the `zone` repository is cloned on the NAS share, use the path form (`/nas/projects/andrusone/zone`) or its `file://` URL. It needs no key and no DNS, and the setup checks that the folder exists. A missing folder is refused.
 
 The answers go to `compose/core-vm/.env` (git ignores it). A rerun reuses that file and asks nothing.
 
@@ -61,5 +63,5 @@ Run it from a LAN client, not from the VM: the point is that a client on the LAN
 ## If it stops
 
 - `systemd is not running`: the VM needs systemd. A container, a WSL shell or a shell without systemd cannot be a core node.
-- `CORE_ZONE_URL ... not valid`: give an address, not a name, and an `http://` or `https://` URL.
+- `CORE_ZONE_URL ... not valid`: give an `http://` or `https://` URL with an address, not a name; or an absolute path to a folder that exists; or a `file://` URL of one.
 - `zone-sync: no copy yet`: the Git host at `CORE_ZONE_URL` must be reachable from the VM. Read the log with `journalctl -u zone-sync.service`, fix the address or the network, and run the setup again.
