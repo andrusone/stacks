@@ -219,3 +219,25 @@ core_up() {
 	done
 	step "core containers are running"
 }
+
+# The last stage (ST267, CORE-FR-10 MVP 3): does this VM's own resolver answer a public name and an
+# internal one? Read-only, so every mode runs it. Two lines, then one line of meaning per "no". It never
+# changes the exit code: the proof is information, not a gate. CORE_PROBE_NAME in .env names the internal
+# probe; the default is the zone's ns1.
+probe_name() {
+	local name=""
+	if [ -f "$ENV_FILE" ]; then name="$(sed -n 's/^CORE_PROBE_NAME=//p' "$ENV_FILE" | tail -n 1)"; fi
+	echo "${name:-ns1.core.andrusonline.com}"
+}
+
+resolve_check() {
+	local name pub=yes int=yes
+	name="$(probe_name)"
+	getent hosts github.com > /dev/null 2>&1 || pub=no
+	getent hosts "$name" > /dev/null 2>&1 || int=no
+	echo "resolves github.com: $pub"
+	echo "resolves $name: $int"
+	if [ "$pub" = no ]; then echo "public names fail: the VM's DNS is not set"; fi
+	if [ "$int" = no ]; then echo "internal names fail: the zone is not loaded yet or this node's resolver is not yet in use"; fi
+	return 0
+}
