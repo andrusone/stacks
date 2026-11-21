@@ -395,7 +395,7 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
 ## 10. What this does not cover
 
 - Role tokens and a protected `main` branch.
-- The backup and the restore. Both scripts exist and are run by hand, not on a schedule. They are the MVP 1 scripts: they call plain `docker`, so they run with `sudo`, and they read `FORGE_DATA` and `FORGE_BACKUP` from the command line, not from `.env`. `FORGE_BACKUP` must lie outside the data folder. The backup copy goes to a folder on the NAS share that the golden image already mounts at `/nas/cloud-backup`, in `services/forge/backup`; that copy is the SMB copy, not the live data.
+- The backup and the restore. Both scripts exist and are run by hand, not on a schedule. They are the MVP 1 scripts: they call plain `docker`, so they run with `sudo`, and they read `FORGE_DATA` and `FORGE_BACKUP` from the command line. The copy is encrypted with age (ST271): it is written as `forge-<stamp>.zip.age`, and no plain zip reaches the backup folder. The backup reads its public recipient, `FORGE_BACKUP_AGE_RECIPIENT`, from `compose/forge/.env`; you generate the key pair with your own D10 script on your own machine, and the public half (`age1...`) is the only part that goes in `.env`. The restore needs the private half, the identity file, named on the command line as `FORGE_BACKUP_AGE_IDENTITY`; keep it off the NAS and off the data disk, and point to it only for the restore. `FORGE_BACKUP` must lie outside the data folder. The backup copy goes to a folder on the NAS share that the golden image already mounts at `/nas/cloud-backup`, in `services/forge/backup`; that copy is the SMB copy, not the live data.
 
   Make a backup while the forge is running (on the forge VM, from the stacks folder):
 
@@ -422,7 +422,7 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
   ```
 
   ```
-  sudo FORGE_DATA=/data/forgejo FORGE_BACKUP=/nas/cloud-backup/services/forge/backup bash compose/forge/restore.sh      # bash, on the forge VM: unpacks the newest copy into the data folder and starts a local forge on 127.0.0.1:3000
+  sudo FORGE_DATA=/data/forgejo FORGE_BACKUP=/nas/cloud-backup/services/forge/backup FORGE_BACKUP_AGE_IDENTITY=/path/to/your/age-identity bash compose/forge/restore.sh      # bash, on the forge VM: decrypts the newest copy with your identity file, unpacks it into the data folder and starts a local forge on 127.0.0.1:3000
   ```
 
   ```

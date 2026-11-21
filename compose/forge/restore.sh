@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Restore the local Forgejo's application state from the newest backup (ST69, FG-FR-14
-# MVP 1). Run after the data folder has been emptied and forge-down has removed the
-# container. The newest forge-*.zip in the backup folder (written by backup.sh, ST67) is
-# unpacked into the data folder at the paths the image uses:
+# Restore the local Forgejo's application state from the newest backup (ST69, ST271, FG-FR-14
+# MVP 1 and 4). Run after the data folder has been emptied and forge-down has removed the
+# container. The newest forge-*.zip.age in the backup folder (written by backup.sh, ST67, ST271)
+# is decrypted with the age identity file FORGE_BACKUP_AGE_IDENTITY (read, never printed or
+# copied) and unpacked into the data folder at the paths the image uses:
 #   archive data/   -> <data>/gitea/           (gitea.db and its -wal/-shm, jwt, indexers, ...)
 #   archive repos/  -> <data>/git/repositories/
 # The archive does not hold admin.password, so the restore brings the forge up with
@@ -27,10 +28,13 @@ if [ -n "$(ls -A "$data")" ]; then
   exit 1
 fi
 
+identity="${FORGE_BACKUP_AGE_IDENTITY:-}"
+[ -n "$identity" ] && [ -r "$identity" ] || { echo "forge-restore: set FORGE_BACKUP_AGE_IDENTITY to the readable age identity file" >&2; exit 1; }
+
 shopt -s nullglob
-copies=("$backup"/forge-*.zip)
+copies=("$backup"/forge-*.zip.age)
 if [ "${#copies[@]}" -eq 0 ]; then
-  echo "forge-restore: no forge-*.zip in $backup; run mise run forge-backup on the old data first" >&2
+  echo "forge-restore: no forge-*.zip.age in $backup; run mise run forge-backup on the old data first" >&2
   exit 1
 fi
 mapfile -t sorted < <(printf '%s\n' "${copies[@]}" | sort -r)
@@ -42,7 +46,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-unzip -q "$archive" -d "$tmp"
+age -d -i "$identity" -o "$tmp/forge.zip" "$archive"
+unzip -q "$tmp/forge.zip" -d "$tmp"
 if [ ! -d "$tmp/data" ] || [ ! -d "$tmp/repos" ]; then
   echo "forge-restore: $archive has no data/ or repos/ folder" >&2
   exit 1

@@ -64,6 +64,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The backups are encrypted (ST271). The drill makes a throwaway age key pair in its own folder,
+# never the owner's, and removes it with the folder.
+age-keygen -o "$work/age-identity" >/dev/null 2>&1 || { echo "FAIL start: age-keygen could not make the throwaway key"; exit 1; }
+export FORGE_BACKUP_AGE_IDENTITY="$work/age-identity"
+FORGE_BACKUP_AGE_RECIPIENT="$(age-keygen -y "$work/age-identity")"
+export FORGE_BACKUP_AGE_RECIPIENT
+
 # A step's function calls fail with a reason; errexit is off inside a step (it runs in an
 # if), so every command that can fail is checked explicitly.
 fail() {
