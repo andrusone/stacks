@@ -56,7 +56,7 @@ services:
     volumes:
       - ${MONITOR_DIR:?set MONITOR_DIR in compose/monitor/.env}/beszel:/beszel_data
     ports:
-      - "${MONITOR_BIND:?set MONITOR_BIND in compose/monitor/.env}:${BESZEL_PORT:-8090}:8090"
+      - "${MONITOR_BIND:?set MONITOR_BIND in compose/monitor/.env}:${BESZEL_PORT:-8091}:8090"
     healthcheck:
       test: ["CMD", "/beszel", "health", "--url", "http://localhost:8090"]
       interval: 30s
