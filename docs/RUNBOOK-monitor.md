@@ -105,11 +105,36 @@ curl -d "hello" http://<MONITOR_BIND>:<NTFY_PORT>/<NTFY_TOPIC>      # curl, on t
 
 The message should arrive on the phone within seconds.
 
+## 4b. The outside heartbeat: a message when the monitor goes quiet
+
+Gatus and ntfy run on the monitor, so they cannot tell you the monitor itself is down. An outside dead-man's-switch service can: the monitor pings it every 5 minutes while Gatus answers, and when the pings stop, the service alerts you.
+
+1. At an outside dead-man's-switch service that alerts on silence (a free check is enough), make a check with a **15 minute grace**. Copy its ping URL. It is a secret: do not paste it into git, a story or a chat.
+2. On the VM, set it in the env file with an editor (an editor, on the VM, over the ssh session):
+
+   ```
+   nano compose/monitor/.env      # editor, on the VM: set HEARTBEAT_URL= to the ping URL, then save
+   ```
+
+3. Run setup again (`./setup.sh`, on the VM). Its last lines say `heartbeat: on`. Leave `HEARTBEAT_URL` empty and the last line says `heartbeat: off (set HEARTBEAT_URL)`, and the heartbeat sends nothing.
+4. Prove it. On the VM, stop Docker, which stops the monitor:
+
+   ```
+   sudo systemctl stop docker      # sudo and systemctl, on the VM: the monitor stops
+   ```
+
+   A message arrives from the outside service within 15 minutes. Then start it again:
+
+   ```
+   sudo systemctl start docker     # sudo and systemctl, on the VM: the monitor comes back
+   ```
+
+   Check the status page as in section 3.
+
 ## 5. What this does not cover
 
 - Beszel (the host's health stays "unknown" for now; the host check is only a network check).
 - The timer that pulls new checks from git.
-- The outside heartbeat that tells you if the monitor itself goes quiet.
 - Rebuilding the monitor alone from scratch.
 - Protection against a bad commit: a broken check file is not rejected yet.
 

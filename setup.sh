@@ -22,9 +22,10 @@
 # - In this checkout: mise trust and mise install, so mise.toml is the tool list.
 # - Writes $MONITOR_DIR/gatus/config.yaml from `go run ./cmd/health generate health` (the stacks'
 #   health files; the starter stays in the compose file), through a temp file and mv, only when its text differs.
-# - The health sync's timer (ST247, HL-FR-13): health-sync.service and health-sync.timer in
-#   /etc/systemd/system, run as this checkout's user, who joins the docker and monitor groups.
-#   compose/monitor/health-sync-install.sh does it; without systemd it prints the command.
+# - The monitor's timers: the health sync (ST247, HL-FR-13) and the outside heartbeat (ST257, HL-FR-09),
+#   four units in /etc/systemd/system, run as this checkout's user, who joins the docker and monitor groups.
+#   compose/monitor/health-sync-install.sh does it; without systemd it prints the command. The env file
+#   gets a HEARTBEAT_URL line (empty until typed); the last line says heartbeat: on or off.
 # - systemctl enable docker, so the containers restart on boot. Without systemd it counts no change
 #   and prints the command to run.
 # - ufw: if it is active, allows exactly GATUS_PORT and NTFY_PORT (tcp) when not already allowed, and
@@ -228,17 +229,29 @@ settle() {
 	ENV_VAL[$name]="$answer"
 }
 
-# The env file's text: the template with the settled values filled in, comments kept.
+# A value already in the env file (its last line for the key), else the default given. Keeps values
+# setup.sh does not ask for (BESZEL_PORT, HEARTBEAT_URL) across a rewrite of the file.
+stored_or() {
+	local v=""
+	[ -f "$ENV_FILE" ] && v="$(sed -n "s/^$1=//p" "$ENV_FILE" | tail -n1)"
+	printf '%s' "${v:-$2}"
+}
+
+# The env file's text: the template with the settled values filled in, comments kept, then the heartbeat line.
+# The outside heartbeat's URL (ST257, HL-FR-09) is never asked for, so never a stop: empty in a new file, so the
+# heartbeat stays off until the owner types it there.
 render_env() {
 	local line key
 	while IFS= read -r line || [ -n "$line" ]; do
 		key="${line%%=*}"
 		if [[ $line == *=* && $key =~ ^[A-Z_]+$ ]]; then
-			echo "$key=${ENV_VAL[$key]}"
+			echo "$key=${ENV_VAL[$key]:-$(stored_or "$key" "${line#*=}")}"
 		else
 			echo "$line"
 		fi
 	done < "$ENV_EXAMPLE"
+	echo "# HEARTBEAT_URL: a dead-man's-switch URL from any outside service that alerts on silence; leave empty to turn the heartbeat off. Not asked by setup.sh: type it here."
+	echo "HEARTBEAT_URL=$(stored_or HEARTBEAT_URL '')"
 }
 
 # Writes the env file (mode 600, from mktemp) only when a value differs from the stored one.
@@ -592,7 +605,7 @@ run_check() {
 	if [ -z "$problems" ]; then
 		hs_check
 	else
-		report missing "health-sync timer and user" "they need the env file first"
+		report missing "monitor timers and user" "they need the env file first"
 	fi
 
 	if ! command -v ufw >/dev/null 2>&1; then
@@ -712,7 +725,7 @@ else
 	change "systemctl enable docker (sudo)" sudo systemctl enable docker
 fi
 
-# 7b. The health sync's timer (ST247): see compose/monitor/health-sync-install.sh.
+# 7b. The health sync's timer (ST247) and the heartbeat's (ST257): see compose/monitor/health-sync-install.sh.
 hs_run
 
 # 8. ufw: open exactly the two ports this stack publishes, and only when ufw is active.
@@ -733,6 +746,11 @@ fi
 # 9. The addresses apply only once the monitor is started; then offer to start it.
 echo ""
 echo "Gatus: http://$MONITOR_BIND:$GATUS_PORT (once started)   ntfy: http://$MONITOR_BIND:$NTFY_PORT (once started)"
+if [ -n "$(stored_or HEARTBEAT_URL '')" ]; then
+	echo "heartbeat: on"
+else
+	echo "heartbeat: off (set HEARTBEAT_URL)"
+fi
 start_status=0
 start_offer || start_status=$?
 echo "changes: $CHANGES"
