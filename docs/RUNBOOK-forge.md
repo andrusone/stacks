@@ -109,7 +109,8 @@ There is no file to copy or edit. The setup script (section 4b) asks for each va
 | `FORGE_GID` | The group id of `FORGE_USER`. | `1100` | no |
 | `FORGE_BIND` | The forge VM's own address, so your browser and the runner can reach the forge. | the VM's address on its network (for example `192.168.1.60`) | no |
 | `FORGE_PORT` | The port of the forge's web page. | `3000` | no |
-| `FORGE_URL` | The address the forge's page answers at, with the port: what you type in a browser and what the runner connects to. | `http://` + `FORGE_BIND` + `:` + `FORGE_PORT` + `/` | no |
+| `FORGE_HOST` | The forge's name on your network (letters, digits, dots and hyphens; no spaces). Nothing resolves it by itself: until the name points at the forge VM, other machines cannot open the URL. | `forge.core.andrusonline.com` | no |
+| `FORGE_URL` | The address the forge's page answers at, with the port: what you type in a browser and what the runner connects to. | `http://` + `FORGE_HOST` + `:` + `FORGE_PORT` + `/` | no |
 | `FORGE_DATA` | The folder on the data disk where the forge keeps all its data. | `/data/forgejo` | no |
 | `FORGE_ADMIN_USER` | The forge's admin login. You will log in as this user. | `forge-admin` | no |
 | `FORGE_ADMIN_EMAIL` | The admin's email address, as the forge asks for it. Use any address you control. | none: you type it (for example `admin@example.com`) | no |
