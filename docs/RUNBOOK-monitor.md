@@ -110,10 +110,10 @@ The message should arrive on the phone within seconds.
 Gatus and ntfy run on the monitor, so they cannot tell you the monitor itself is down. An outside dead-man's-switch service can: the monitor pings it every 5 minutes while Gatus answers, and when the pings stop, the service alerts you.
 
 1. At an outside dead-man's-switch service that alerts on silence (a free check is enough), make a check with a **15 minute grace**. Copy its ping URL. It is a secret: do not paste it into git, a story or a chat.
-2. On the VM, set it in the env file with an editor (an editor, on the VM, over the ssh session):
+2. On the VM, set it in the env file with an editor (an editor, on the VM, over the ssh session). A monitor set up before this change has no `HEARTBEAT_URL` line yet: add it at the end of the file:
 
    ```
-   nano compose/monitor/.env      # editor, on the VM: set HEARTBEAT_URL= to the ping URL, then save
+   nano compose/monitor/.env      # editor, on the VM: set HEARTBEAT_URL= to the ping URL (add the line if it is not there), then save
    ```
 
 3. Run setup again (`./setup.sh`, on the VM). Its last lines say `heartbeat: on`. Leave `HEARTBEAT_URL` empty and the last line says `heartbeat: off (set HEARTBEAT_URL)`, and the heartbeat sends nothing.
