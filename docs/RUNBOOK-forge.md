@@ -4,7 +4,7 @@ The steps to build the forge (FG-FR-15) and then the runner on two fresh VMs mad
 
 ## 0. What you supply, that no agent can
 
-- **Two VMs**, each cloned by you from the golden image, named and addressed with `hostbook`, and set up as [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 1 says. The image's steps are in [REF-golden-image.md](REF-golden-image.md); this runbook does not repeat them. Write the addresses down: the forge's is `FORGE_BIND`, the runner's is the one you ssh to.
+- **Two VMs**, each cloned by you from the golden image, named with `hostbook next-name --phys v --env p --intent c --os x` before the clone and added with `hostbook add <name> <address>` (the `hostbook` console does the same), and set up as [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 1 says. The image's steps are in [REF-golden-image.md](REF-golden-image.md); this runbook does not repeat them. Write the addresses down: the forge's is `FORGE_BIND`, the runner's is the one you ssh to.
 - **A second disk for the forge VM**, 20 GB to start, on TrueNAS iSCSI storage. You add it in Proxmox, format it and mount it at `/data` (section 3). Forgejo keeps its data on this disk, not on the NAS share.
 - **The forge admin's email address**, which the setup script asks you for in section 4. The admin password the script generates for you; you do not make one.
 - **The runner's one-time registration token**, made on the forge's page once the forge is up (section 5).

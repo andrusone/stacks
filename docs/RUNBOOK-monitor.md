@@ -14,7 +14,7 @@ ssh youruser@192.168.1.50      # ssh, on your own computer (use your VM's addres
 
 Then name and address the VM:
 
-- Name it and add it to the zone with `hostbook`: run `hostbook` with no arguments (the console asks four questions and offers to add the host), or `hostbook add <name> <address>` if you already have both. See `machine:docs/SPEC-hostbook.md`.
+- Name it with `hostbook`. Production hosts are `v` (virtual) with environment `p`. Before the VM is made, run `hostbook next-name --phys v --env p --intent c --os x` (`c` is the VM intent the naming standard allows, `network:docs/standards/std-naming.md`). Once the VM has its address, add it to the zone with `hostbook add <name> <address>`, or run `hostbook` with no arguments and use the console (it asks the same four letters and offers to add the host). See `machine:docs/SPEC-hostbook.md`.
 - Set its hostname and static address on the VM with `machine --profile server --stage-clone`. It asks for the host name, the static IPv4 address with its CIDR, the gateway and the DNS server, writes the new network file to a staging path and prints it with its diff. It applies nothing until you type `apply`. The machine repo documents this route (`machine:docs/SPEC-machine.md`, MC-FR-14) and no by-hand netplan route, so none is given here.
 - Write down the **fixed address** you gave the VM: you will need it as `MONITOR_BIND`.
 

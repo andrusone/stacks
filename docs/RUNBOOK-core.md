@@ -4,7 +4,7 @@ The owner's steps to bring up one core node (DNS, time and the zone) on a VM, in
 
 ## 1. Make the VM from the golden image
 
-Make the VM from the golden image as [REF-golden-image.md](REF-golden-image.md) describes. Name it and give it its fixed address on the LAN (the one you will put in `CORE_BIND`) with `hostbook`, as the zone repository's README describes, not with `post-clone-server.sh`. Nothing else on the VM is set by hand.
+Name the VM before you make it: production hosts are `v` (virtual) with environment `p`, so run `hostbook next-name --phys v --env p --intent c --os x` (`c` is the VM intent the naming standard allows). Then make the VM from the golden image as [REF-golden-image.md](REF-golden-image.md) describes. Give it its fixed address on the LAN (the one you will put in `CORE_BIND`) and add it with `hostbook add <name> <address>`, as the zone repository's README describes, or use the `hostbook` console; not with `post-clone-server.sh`. Nothing else on the VM is set by hand.
 
 ## 2. Get the repo onto the VM
 
