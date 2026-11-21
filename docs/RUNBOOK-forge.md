@@ -397,6 +397,12 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
 - Role tokens and a protected `main` branch.
 - The backup and the restore. Both scripts exist and are run by hand, not on a schedule. They are the MVP 1 scripts: they call plain `docker`, so they run with `sudo`, and they read `FORGE_DATA` and `FORGE_BACKUP` from the command line. The copy is encrypted with age (ST271): it is written as `forge-<stamp>.zip.age`, and no plain zip reaches the backup folder. The backup reads its public recipient, `FORGE_BACKUP_AGE_RECIPIENT`, from `compose/forge/.env`; you generate the key pair with your own D10 script on your own machine, and the public half (`age1...`) is the only part that goes in `.env`. The restore needs the private half, the identity file, named on the command line as `FORGE_BACKUP_AGE_IDENTITY`; keep it off the NAS and off the data disk, and point to it only for the restore. `FORGE_BACKUP` must lie outside the data folder. The backup copy goes to a folder on the NAS share that the golden image already mounts at `/nas/cloud-backup`, in `services/forge/backup`; that copy is the SMB copy, not the live data.
 
+  Install age system-wide once on the forge VM. The repo's pinned copy (mise) is not on the PATH that `sudo` uses, so the backup and the restore would stop with `age: command not found`. Check it with `sudo bash -c 'command -v age'`, which should print `/usr/bin/age`:
+
+  ```
+  sudo apt install -y age      # apt, on the forge VM: installs age on the system PATH (Ubuntu's package; the repo's mise pin is 1.3.1, the format is the same)
+  ```
+
   Make a backup while the forge is running (on the forge VM, from the stacks folder):
 
   ```
@@ -444,6 +450,16 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
   ```
 
   The restore has not been run on a VM yet, and its scripts run as root under `sudo`, so the files they write are owned by root until the `chown` above.
+
+  Copies made before ST271 are plain zips with no `.age`, and the backup script does not re-encrypt or delete them. Once a `.age` copy has restored in a drill, remove the plain ones by hand. List them first, then delete:
+
+  ```
+  sudo ls /nas/cloud-backup/services/forge/backup/forge-*.zip      # ls, on the forge VM: lists plain zips (no .age); check the list is only the old copies
+  ```
+
+  ```
+  sudo rm /nas/cloud-backup/services/forge/backup/forge-*.zip      # rm, on the forge VM: deletes those plain zips; the .zip.age copies do not match this pattern
+  ```
 
 - SOPS-encrypted secrets.
 - Health files.

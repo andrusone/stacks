@@ -64,11 +64,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The backups are encrypted (ST271). The drill makes a throwaway age key pair in its own folder,
-# never the owner's, and removes it with the folder.
-age-keygen -o "$work/age-identity" >/dev/null 2>&1 || { echo "FAIL start: age-keygen could not make the throwaway key"; exit 1; }
-export FORGE_BACKUP_AGE_IDENTITY="$work/age-identity"
-FORGE_BACKUP_AGE_RECIPIENT="$(age-keygen -y "$work/age-identity")"
+# The backups are encrypted (ST271). A set FORGE_BACKUP_AGE_IDENTITY is the owner's file: read, never copied. Unset, a throwaway pair is made in the drill's folder.
+if [ -z "${FORGE_BACKUP_AGE_IDENTITY:-}" ]; then
+  age-keygen -o "$work/age-identity" >/dev/null 2>&1 || { echo "FAIL start: age-keygen could not make the throwaway key"; exit 1; }
+  export FORGE_BACKUP_AGE_IDENTITY="$work/age-identity"; echo "drill: FORGE_BACKUP_AGE_IDENTITY unset; using a throwaway key pair for this run"
+fi
+FORGE_BACKUP_AGE_RECIPIENT="$(age-keygen -y "$FORGE_BACKUP_AGE_IDENTITY")"
 export FORGE_BACKUP_AGE_RECIPIENT
 
 # A step's function calls fail with a reason; errexit is off inside a step (it runs in an

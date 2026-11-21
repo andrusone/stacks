@@ -17,6 +17,7 @@ keep=7
 recipient="${FORGE_BACKUP_AGE_RECIPIENT:-}"
 [ -n "$recipient" ] || recipient="$(sed -n 's/^FORGE_BACKUP_AGE_RECIPIENT=//p' "$here/.env" 2>/dev/null | tail -n 1 || true)"
 [ -n "$recipient" ] || { echo "forge-backup: no FORGE_BACKUP_AGE_RECIPIENT; set the age public key in compose/forge/.env" >&2; exit 1; }
+command -v age >/dev/null || { echo "forge-backup: age is not on PATH under sudo; install it on this VM (sudo apt install age)" >&2; exit 1; }
 
 case "$backup/" in
   "$data/"*)

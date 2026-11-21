@@ -4,7 +4,8 @@
 # a SECRET_KEY line, data/ and repos/ hold marker files. Checks: no recipient is refused with one line; with
 # the recipient in .env one forge-*.zip.age is written and nothing else is in the backup folder; the .age file
 # does not hold the SECRET_KEY bytes; restore without an identity is refused; restore with it brings the
-# markers back into an empty data folder.
+# markers back into an empty data folder. With age hidden from PATH (as under sudo) backup is refused with
+# the install line and writes nothing.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -72,6 +73,18 @@ out="$(STUB_RUNNING=true bash "$work/backup.sh" 2>&1 >/dev/null)" && fail "backu
 [ "$(printf '%s\n' "$out" | wc -l)" = 1 ] || fail "no recipient should print one line, got: $out"
 case "$out" in *FORGE_BACKUP_AGE_RECIPIENT*) ;; *) fail "the no-recipient message is wrong: $out" ;; esac
 [ -z "$(ls -A "$FORGE_BACKUP")" ] || fail "a refused backup left files in the backup folder"
+
+# 1b. age not on PATH (as under sudo, where mise's shim is missing): refused with the install line, nothing written.
+mapfile -t path_dirs < <(tr : '\n' <<< "$PATH")
+nopath="$tmp/bin"
+for d in "${path_dirs[@]}"; do
+  [ -x "$d/age" ] || nopath="$nopath:$d"
+done
+env PATH="$nopath" sh -c 'command -v age' >/dev/null 2>&1 && fail "could not hide age from PATH for the test"
+out="$(env PATH="$nopath" FORGE_BACKUP_AGE_RECIPIENT="$recipient" STUB_RUNNING=true bash "$work/backup.sh" 2>&1 >/dev/null)" &&
+	fail "backup without age on PATH exited zero"
+case "$out" in *"install age"*) ;; *) fail "the no-age message is wrong: $out" ;; esac
+[ -z "$(ls -A "$FORGE_BACKUP")" ] || fail "a backup without age left files in the backup folder"
 
 # 2. The recipient in .env (the forge's own file), not in the environment: one encrypted archive.
 printf 'FORGE_BACKUP_AGE_RECIPIENT=%s\n' "$recipient" > "$work/.env"
