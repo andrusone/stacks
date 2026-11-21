@@ -27,8 +27,9 @@
 #   compose/monitor/health-sync-install.sh does it; without systemd it prints the command.
 # - systemctl enable docker, so the containers restart on boot. Without systemd it counts no change
 #   and prints the command to run.
-# - ufw: if it is active, allows exactly GATUS_PORT and NTFY_PORT (tcp) when not already allowed, and
-#   says so. If it is inactive, changes nothing and says so.
+# - ufw (ST264): compose/monitor/host.sh makes it default-deny and turns it on: SSH from MONITOR_ADMIN,
+#   GATUS_PORT, NTFY_PORT and BESZEL_PORT from MONITOR_LAN, the same in DOCKER-USER. MONITOR_LAN defaults to
+#   the default route's subnet; MONITOR_ADMIN to MONITOR_LAN; both may be set in the env file or the env.
 # - --check changes nothing and needs no sudo prompt: it lists each item as ok or missing (the Docker
 #   daemon too) and exits non-zero if anything is missing. --dry-run prints every step and changes nothing.
 # - Last, it prints the two addresses as "once started" and asks "Start the monitor now? [Y/n]" (yes by
@@ -259,6 +260,8 @@ render_env() {
 write_env_file() {
 	local tmp name same=1
 	read_env
+	# BESZEL_PORT is in the template but not asked: its stored value (or 8091) is written back, not the template's.
+	ENV_VAL[BESZEL_PORT]="$(env_optional BESZEL_PORT 8091)"
 	for name in "${ENV_KEYS[@]}"; do
 		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
 		[ "${STORED[$name]:-}" = "${ENV_VAL[$name]}" ] || same=0
@@ -488,6 +491,22 @@ ufw_listing() {
 	fi
 }
 
+# The LAN's CIDR: the subnet of the default route's interface. Empty when there is no default route.
+lan_default() {
+	local dev
+	dev="$(ip -o -4 route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)"
+	[ -n "$dev" ] || return 0
+	ip -o -4 route show dev "$dev" proto kernel scope link 2>/dev/null | awk '{ print $1; exit }'
+}
+
+# A value from the env file (MONITOR_LAN, MONITOR_ADMIN, BESZEL_PORT: not asked, so not in ENV_KEYS),
+# else the default given. Read with sed, never sourced.
+env_optional() {
+	local v=""
+	[ -f "$ENV_FILE" ] && v="$(sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1)"
+	echo "${v:-$2}"
+}
+
 # --- start the monitor -----------------------------------------------------
 
 # Asks "Start the monitor now? [Y/n]" (yes by default). Starts only on an explicit yes (Enter counts)
@@ -610,13 +629,13 @@ run_check() {
 	fi
 
 	if ! command -v ufw >/dev/null 2>&1; then
-		echo "ufw: not installed, nothing to open"
+		report missing "ufw" "not installed: sudo apt-get install -y ufw (the golden image provides it)"
 	elif [ -n "$problems" ]; then
 		echo "ufw: not checked until the env file is complete"
 	elif ! listing="$(ufw_listing)"; then
 		echo "ufw: not read without a sudo prompt; ./setup.sh (run mode) checks it"
 	elif ! grep -q '^Status: active' <<< "$listing"; then
-		echo "ufw: inactive, nothing to open"
+		report missing "ufw active" "ufw is off: ./setup.sh (run mode) sets the monitor's rules and turns it on"
 	else
 		for port in "$GATUS_PORT" "$NTFY_PORT"; do
 			if grep -Eq "^${port}/tcp[[:space:]]+ALLOW" <<< "$listing"; then
@@ -729,19 +748,32 @@ fi
 # 7b. The health sync's timer (ST247): see compose/monitor/health-sync-install.sh.
 hs_run
 
-# 8. ufw: open exactly the two ports this stack publishes, and only when ufw is active.
-if ! command -v ufw >/dev/null 2>&1; then
-	echo "ufw: not installed, nothing to open"
-elif ! ufw_state="$(ufw_listing)" || ! grep -q '^Status: active' <<< "$ufw_state"; then
-	echo "ufw: inactive, so no port was opened"
+# 8. ufw (ST264): compose/monitor/host.sh sets the rules and turns ufw on. Its "changes: n" joins ours. A
+# dry run runs it with --dry-run (no sudo, nothing changed) and prints what it would do.
+ufw_step() {
+	local runner=(sudo) flag=() out="" status=0 n
+	if [ "$DRY_RUN" -eq 1 ]; then runner=(); flag=(--dry-run); fi
+	out="$("${runner[@]}" env MONITOR_LAN="$MONITOR_LAN" MONITOR_ADMIN="$MONITOR_ADMIN" \
+		GATUS_PORT="$GATUS_PORT" NTFY_PORT="$NTFY_PORT" BESZEL_PORT="$BESZEL_PORT" \
+		bash "$REPO_DIR/compose/monitor/host.sh" "${flag[@]}" 2>&1)" || status=$?
+	grep -v '^changes: ' <<< "$out" || true
+	n="$(sed -n 's/^changes: //p' <<< "$out" | tail -n 1)"
+	CHANGES=$((CHANGES + ${n:-0}))
+	if [ "$status" -ne 0 ]; then
+		stop_or_note "ufw was not set (host.sh said why above)"
+		return 0
+	fi
+	if [ "$DRY_RUN" -eq 0 ]; then
+		echo "ufw: active, ports 22/tcp from $MONITOR_ADMIN, $GATUS_PORT/tcp, $NTFY_PORT/tcp, $BESZEL_PORT/tcp from $MONITOR_LAN"
+	fi
+}
+MONITOR_LAN="${MONITOR_LAN:-$(env_optional MONITOR_LAN "$(lan_default)")}"
+MONITOR_ADMIN="${MONITOR_ADMIN:-$(env_optional MONITOR_ADMIN "$MONITOR_LAN")}"
+BESZEL_PORT="${BESZEL_PORT:-$(env_optional BESZEL_PORT 8091)}"
+if [ -z "$MONITOR_LAN" ]; then
+	stop_or_note "MONITOR_LAN has no default (no default route): set it in $ENV_FILE to the LAN's CIDR, for example 192.168.1.0/24"
 else
-	for port in "$GATUS_PORT" "$NTFY_PORT"; do
-		if grep -Eq "^${port}/tcp[[:space:]]+ALLOW" <<< "$ufw_state"; then
-			step "ufw already allows ${port}/tcp"
-		else
-			change "ufw: allow ${port}/tcp (the monitor's port) (sudo)" sudo ufw allow "${port}/tcp"
-		fi
-	done
+	ufw_step
 fi
 
 # 9. The addresses apply only once the monitor is started; then offer to start it.
