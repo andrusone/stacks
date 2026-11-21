@@ -1,5 +1,7 @@
 # Runbook: a hand-made VM becomes a Docker host
 
+Build the four VMs in order first: [RUNBOOK-order.md](RUNBOOK-order.md).
+
 The steps to turn a VM (or a WSL shell, or a container) into a Docker host with one script (SK-FR-09). A VM comes from the golden image: see [REF-golden-image.md](REF-golden-image.md). Each command says what tool it uses and where it runs.
 
 ## 1. Get the repo onto the host
