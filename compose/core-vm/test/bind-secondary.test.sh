@@ -29,8 +29,8 @@ sec_ip=172.31.213.11
 third_ip=172.31.213.12
 
 docker network create --subnet 172.31.213.0/24 "$net" >/dev/null
-CORE_ROLE=primary CORE_PEER="$sec_ip" CORE_NAMED_OUT="$tmp/primary.conf" bash "$bind_dir/zone.sh" >/dev/null
-CORE_ROLE=secondary CORE_PEER="$pri_ip" CORE_NAMED_OUT="$tmp/secondary.conf" bash "$bind_dir/zone.sh" >/dev/null
+CORE_ROLE=primary CORE_PEER="$sec_ip" CORE_BIND_PORT=53 CORE_NAMED_OUT="$tmp/primary.conf" bash "$bind_dir/zone.sh" >/dev/null
+CORE_ROLE=secondary CORE_PEER="$pri_ip" CORE_BIND_PORT=53 CORE_NAMED_OUT="$tmp/secondary.conf" bash "$bind_dir/zone.sh" >/dev/null
 
 docker run -d --name "$tag-pri" --network "$net" --ip "$pri_ip" \
 	-v "$tmp/primary.conf:/etc/bind/named.conf:ro" \
