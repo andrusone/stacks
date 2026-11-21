@@ -29,8 +29,8 @@
 # - --check changes nothing and needs no sudo: it lists each item as ok or missing and exits 1 if any
 #   is missing. --dry-run prints every step and changes nothing. Every machine change goes through
 #   change(), which --dry-run skips. A real run's last line is changes: n.
-# - Health file (FG-FR-09, ST108): writes health/forge.toml with the VM's address (FORGE_BIND, so the
-#   monitor needs no DNS), unless the file exists; it says commit health/forge.toml. Nothing is committed here.
+# - Health file (FG-FR-09, ST263): writes nothing. It checks health/forge.toml is on origin/main (after a
+#   fetch) and prints the one command that adds it, with this VM's address. It exits 0 either way.
 # - Last, it prints the forge URL as "once started" and asks "Start the forge now? [Y/n]" (yes by
 #   default). It starts the forge only on a yes at a terminal; --yes, no terminal and --dry-run never do.
 # change() and ensure() run the step functions indirectly through "$@", which shellcheck cannot see.
@@ -89,7 +89,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 ENV_FILE="$SCRIPT_DIR/.env"
 ENV_EXAMPLE="$SCRIPT_DIR/.env.example"
-HEALTH_FILE="$REPO_DIR/health/forge.toml"
 COMPOSE_FILE=compose/forge-vm/docker-compose.yml
 DATA_MOUNT=/data
 FIX_DATA="add the second disk to the VM, format it, mount it at /data through /etc/fstab: see docs/RUNBOOK-forge.md"
@@ -600,26 +599,22 @@ if [ "$MODE" = check ]; then
 	exit 1
 fi
 
-# --- the health file (FG-FR-09, ST108) --------------------------------------
+# --- the health file (FG-FR-09, ST263) --------------------------------------
 
-# The file the monitor reads: the same four parts as health/probe-a.toml. Written once; a rerun leaves it.
-health_file_make() {
-	printf '%s\n' \
-		"# The forge's health file (FG-FR-09, ST108): written by compose/forge-vm/setup.sh from the VM's address." \
-		"host = \"$FORGE_BIND\"" \
-		"service = \"$FORGE_BIND:$FORGE_PORT\"" \
-		"request = \"http://$FORGE_BIND:$FORGE_PORT/\"" \
-		"expect_status = 200" \
-		"needs = []" > "$HEALTH_FILE"
+# The monitor reads health/forge.toml from git on main, so this checks origin/main, fetched first on a real run.
+health_in_git() {
+	git -C "$REPO_DIR" ls-tree origin/main health/forge.toml 2>/dev/null | grep -q .
 }
 
 if [ "$ENV_PRESENT" -eq 1 ]; then
 	step "health file"
-	if [ -f "$HEALTH_FILE" ]; then
-		echo "health/forge.toml: already there, left alone"
+	if [ "$MODE" = run ]; then
+		git -C "$REPO_DIR" fetch --quiet origin || echo "health file: could not fetch origin; the answer uses the last fetch"
+	fi
+	if health_in_git; then
+		echo "health file: in git"
 	else
-		change "write health/forge.toml with the address $FORGE_BIND" health_file_make
-		echo "commit health/forge.toml: the monitor reads it from git"
+		echo "health file: missing. On your own machine run: go run ./cmd/health new forge $FORGE_BIND --commit, push, then rerun."
 	fi
 fi
 
