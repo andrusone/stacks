@@ -182,6 +182,21 @@ check "a missing zone URL writes no .env" [ ! -e "$cvm/.env" ]
 run_setup CORE_ZONE_URL= -- --dry-run
 check "a missing zone URL in --dry-run says what would stop" grep -qF 'a real run would stop: CORE_ZONE_URL' <<<"$out"
 
+# 5b. CORE_ZONE_URL as a folder path or a file:// URL of one is accepted; a missing folder is refused
+mkdir -p "$tmp/zone-clone"
+reset_state
+run_setup CORE_ZONE_URL="$tmp/zone-clone" -- --yes
+check "a folder path in CORE_ZONE_URL exits 0" [ "$code" -eq 0 ]
+check "a folder path in CORE_ZONE_URL is written to .env" grep -qx "CORE_ZONE_URL=$tmp/zone-clone" "$cvm/.env"
+reset_state
+run_setup CORE_ZONE_URL="file://$tmp/zone-clone" -- --yes
+check "a file:// URL of a folder in CORE_ZONE_URL exits 0" [ "$code" -eq 0 ]
+reset_state
+run_setup CORE_ZONE_URL="$tmp/no-such-zone" -- --yes
+check "a missing folder in CORE_ZONE_URL exits 2" [ "$code" -eq 2 ]
+check "a missing folder in CORE_ZONE_URL is named" grep -qF 'CORE_ZONE_URL' <<<"$out"
+check "a missing folder in CORE_ZONE_URL writes no .env" [ ! -e "$cvm/.env" ]
+
 # 6. A peer: host.sh and core-up get it; a peer that is not an address exits 2 before anything runs
 reset_state
 run_setup CORE_PEER=192.168.1.60 -- --yes
