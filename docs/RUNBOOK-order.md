@@ -6,7 +6,7 @@ Start every VM from the golden image ([REF-golden-image.md](REF-golden-image.md)
 
 ## 0. Name and address each VM first
 
-Before any VM's first clone, name it and give it its fixed address with `hostbook` (see [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 1). Write the address down: the monitor and the DNS node need it.
+Production hosts are `v` (virtual) with environment `p`. Before any VM's first clone, take its name with `hostbook next-name --phys v --env p --intent c --os x`, then give it its fixed address and add it with `hostbook add <name> <address>` (see [RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 1). The `hostbook` console does the same. Write the address down: the monitor and the DNS node need it.
 
 ## 1. Once, from any VM with the share mounted: `host/nas-layout.sh`
 
