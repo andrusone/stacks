@@ -1,0 +1,11 @@
+# CORE-FR-07 (ST212): runs zone-sync.sh once; zone-sync.timer starts it. The script path is where the
+# core VM's checkout of stacks is; installing the unit is the setup's job, not this file's.
+[Unit]
+Description=Pull the LAN zone repository and copy it to BIND's folder if it passes the check
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/core/zone-sync.env
+ExecStart=/opt/stacks/compose/core-vm/zone-sync.sh

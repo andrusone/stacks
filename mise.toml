@@ -69,3 +69,7 @@ run = 'cd plex && if out=$(PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discove
 [tasks.qbt-prove]
 description = "Prove the Mullvad relay rollover (ST182, QBT-FR-02 MVP 1): the unchanged qbt/ops/mullvad-health.sh under mullvad and curl stubs in a temp folder it removes. No network"
 run = "bash qbt/test/prove-rollover.sh"
+
+[tasks.core-vm-test]
+description = "Test compose/core-vm (ST212, CORE-FR-07 MVP 2): each compose/core-vm/test/*.test.sh, with a local bare repository and stubs; shellcheck of compose/core-vm/*.sh. No network"
+run = "shellcheck compose/core-vm/*.sh && for t in compose/core-vm/test/*.test.sh; do bash \"$t\" || exit 1; done"
