@@ -3,6 +3,7 @@
 //
 //	health check [dir]      dir defaults to "health"
 //	health generate [dir]   prints the Gatus config for dir to stdout
+//	health new <forge|runner> <address> [--commit]   see new.go
 //
 // check exits 0 and prints "health: N stacks ok" when every file is good. It
 // exits 1 and lists every problem as file:line: message on stdout.
@@ -27,8 +28,11 @@ func main() {
 }
 
 func run(args []string, out, errw io.Writer) int {
+	if len(args) >= 1 && args[0] == "new" {
+		return newCommand(args[1:], out, errw)
+	}
 	if len(args) < 1 || len(args) > 2 || (args[0] != "check" && args[0] != "generate") {
-		fmt.Fprintln(errw, "usage: health check [dir] | health generate [dir]")
+		fmt.Fprintln(errw, "usage: health check [dir] | health generate [dir] | health new <forge|runner> <address> [--commit]")
 		return 2
 	}
 	dir := "health"
