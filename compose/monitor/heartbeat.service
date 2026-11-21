@@ -1,0 +1,10 @@
+# HL-FR-09 (ST256): runs heartbeat.sh once; heartbeat.timer starts it. The script path is where the
+# monitor VM's checkout of stacks is; installing the unit is the setup's job, not this file's.
+[Unit]
+Description=Send the outside heartbeat while the monitor's own checks answer
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/stacks/compose/monitor/heartbeat.sh
