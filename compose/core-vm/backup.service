@@ -1,0 +1,8 @@
+# CORE-FR-06 (ST266): runs backup.sh once; backup.timer starts it. The script path is where the core VM's
+# checkout of stacks is; the setup's backup stage installs the unit, with ExecStart and User= filled in.
+[Unit]
+Description=Back up the core node's git-ignored state and deploy-key notes to the NAS
+
+[Service]
+Type=oneshot
+ExecStart=/opt/stacks/compose/core-vm/backup.sh

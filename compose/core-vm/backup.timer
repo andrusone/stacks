@@ -1,0 +1,11 @@
+# CORE-FR-06 (ST266): every day at 03:45; a run missed while the VM was off runs at the next boot. Starts
+# backup.service. The setup enables it only once the backup folder exists.
+[Unit]
+Description=Run the core backup every night
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
