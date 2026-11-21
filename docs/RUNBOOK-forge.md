@@ -115,6 +115,8 @@ There is no file to copy or edit. The setup script (section 4b) asks for each va
 | `FORGE_ADMIN_EMAIL` | The admin's email address, as the forge asks for it. Use any address you control. | none: you type it (for example `admin@example.com`) | no |
 | `FORGE_ADMIN_PASSWORD` | The admin's password. The script generates it and does not print it. | generated | **yes** |
 
+**Set `FORGE_URL` to the forge's name, not its address (owner, 2026-11-21).** Type `http://forge.core.andrusonline.com:3000/` at the `FORGE_URL` question instead of accepting the default. Every repo cloned to the forge keeps that URL in its remote, so changing it later means editing every clone. Add the name first with `hostbook` (the host, and an alias `forge`) so it resolves from your computer and the runner.
+
 The script never prints the password. To read it, once the setup has run, use this command; it prints the value, so do not paste the output into a message:
 
 ```
@@ -412,7 +414,7 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
 ## 10. What this does not cover
 
 - Role tokens and a protected `main` branch.
-- The backup and the restore. Both scripts exist and are run by hand, not on a schedule. They are the MVP 1 scripts: they call plain `docker`, so they run with `sudo`, and they read `FORGE_DATA` and `FORGE_BACKUP` from the command line, not from `.env`. `FORGE_BACKUP` must lie outside the data folder. The backup copy goes to a folder on the NAS share that the golden image already mounts at `/nas/<share>`; that copy is the SMB copy, not the live data.
+- The backup and the restore. Both scripts exist and are run by hand, not on a schedule. They are the MVP 1 scripts: they call plain `docker`, so they run with `sudo`, and they read `FORGE_DATA` and `FORGE_BACKUP` from the command line, not from `.env`. `FORGE_BACKUP` must lie outside the data folder. The backup copy goes to a folder on the NAS share that the golden image already mounts at `/nas/cloud-backup`, in `services/forge/backup`; that copy is the SMB copy, not the live data.
 
   Make a backup while the forge is running (on the forge VM, from the stacks folder):
 
@@ -421,7 +423,7 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
   ```
 
   ```
-  sudo FORGE_DATA=/data/forgejo FORGE_BACKUP=/nas/<share>/forge-backup bash compose/forge/backup.sh      # bash, on the forge VM: writes one copy to the backup folder and keeps the newest seven
+  sudo FORGE_DATA=/data/forgejo FORGE_BACKUP=/nas/cloud-backup/services/forge/backup bash compose/forge/backup.sh      # bash, on the forge VM: writes one copy to the backup folder and keeps the newest seven
   ```
 
   Restoring is not yet a path for the forge VM. The restore script starts its own local forge on `127.0.0.1:3000`, so the steps are: stop the forge VM, move the old data aside so the folder is empty, restore, stop the local forge, fix the owner of the restored files, and start the forge VM on the restored data.
@@ -439,7 +441,7 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
   ```
 
   ```
-  sudo FORGE_DATA=/data/forgejo FORGE_BACKUP=/nas/<share>/forge-backup bash compose/forge/restore.sh      # bash, on the forge VM: unpacks the newest copy into the data folder and starts a local forge on 127.0.0.1:3000
+  sudo FORGE_DATA=/data/forgejo FORGE_BACKUP=/nas/cloud-backup/services/forge/backup bash compose/forge/restore.sh      # bash, on the forge VM: unpacks the newest copy into the data folder and starts a local forge on 127.0.0.1:3000
   ```
 
   ```

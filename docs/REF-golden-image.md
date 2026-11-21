@@ -27,4 +27,4 @@ Docker, the compose plugin, mise, Go. A stack's `setup.sh` installs them (mise f
 
 ## Settled by the owner (2026-11-16, item 30): Forgejo's data
 
-Forgejo keeps SQLite on a local block disk, a second disk on the forge VM (iSCSI-backed on TrueNAS, so an ordinary disk to the VM) mounted at `/data`, not on SMB; no Postgres. The backup copy goes to a `/nas/<share>` path.
+Forgejo keeps SQLite on a local block disk, a second disk on the forge VM (iSCSI-backed on TrueNAS, so an ordinary disk to the VM) mounted at `/data`, not on SMB; no Postgres. The backup copy goes to `/nas/cloud-backup/services/forge/backup` (the layout `host/nas-layout.sh` makes).
