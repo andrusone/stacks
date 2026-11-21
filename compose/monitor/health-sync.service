@@ -1,0 +1,10 @@
+# HL-FR-13 (ST242): runs health-sync.sh once; health-sync.timer starts it. The script path is where the
+# monitor VM's checkout of stacks is; installing the unit is the setup's job, not this file's.
+[Unit]
+Description=Pull the stacks repository and regenerate the monitor's checks, keeping the last good ones if a file is bad
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/stacks/compose/monitor/health-sync.sh
