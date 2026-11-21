@@ -228,13 +228,27 @@ settle() {
 	ENV_VAL[$name]="$answer"
 }
 
+# The value the env file already has for a key setup.sh does not ask for (its last such line), else the
+# template's default. Keeps BESZEL_PORT across a rewrite (ST270).
+kept_or_default() {
+	if [ -f "$ENV_FILE" ] && grep -q "^$1=" "$ENV_FILE"; then
+		grep "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2-
+	else
+		echo "$2"
+	fi
+}
+
 # The env file's text: the template with the settled values filled in, comments kept.
 render_env() {
 	local line key
 	while IFS= read -r line || [ -n "$line" ]; do
 		key="${line%%=*}"
 		if [[ $line == *=* && $key =~ ^[A-Z_]+$ ]]; then
-			echo "$key=${ENV_VAL[$key]}"
+			if [ -n "${ENV_VAL[$key]+set}" ]; then
+				echo "$key=${ENV_VAL[$key]}"
+			else
+				echo "$key=$(kept_or_default "$key" "${line#*=}")"
+			fi
 		else
 			echo "$line"
 		fi
