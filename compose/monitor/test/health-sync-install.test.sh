@@ -181,4 +181,26 @@ hs_origin > "$tmp/origin-c.out"
 [ "$(git -C "$REPO_DIR" remote get-url origin)" = "$HS_ORIGIN_SSH" ] || fail "SSH origin: changed"
 [ "$CHANGES" -eq 0 ] && [ ! -s "$tmp/origin-c.out" ] || fail "SSH origin: counted or printed: $(cat "$tmp/origin-c.out")"
 
-echo "health-sync install test: ok (7 checks)"
+# 8. render_env (ST270): a template key that setup.sh does not ask for is kept from the env file, or takes the
+# template's default when none is stored, and never stops the run; a key setup.sh asks for takes its settled value.
+# The two functions are taken from the real setup.sh, not copied.
+ENV_FILE="$tmp/env"
+ENV_EXAMPLE="$tmp/env.example"
+declare -A ENV_VAL=()
+printf 'MONITOR_USER=monitor\nGATUS_PORT=8081\n# a comment\nBESZEL_PORT=8091\n' > "$ENV_EXAMPLE"
+eval "$(sed -n '/^kept_or_default() {/,/^}/p;/^render_env() {/,/^}/p' "$src/setup.sh")"
+ENV_VAL[MONITOR_USER]=monitor
+ENV_VAL[GATUS_PORT]=8082
+printf 'MONITOR_USER=old\nGATUS_PORT=1\nBESZEL_PORT=8095\n' > "$ENV_FILE"
+render_env > "$tmp/rendered.1" || fail "render_env with an extra key: exited non-zero"
+grep -qx 'BESZEL_PORT=8095' "$tmp/rendered.1" || fail "render_env: stored BESZEL_PORT not kept: $(cat "$tmp/rendered.1")"
+grep -qx 'GATUS_PORT=8082' "$tmp/rendered.1" || fail "render_env: asked GATUS_PORT not the settled value"
+grep -qx '# a comment' "$tmp/rendered.1" || fail "render_env: comment line lost"
+rm -f "$ENV_FILE"
+render_env > "$tmp/rendered.2" || fail "render_env with no env file: exited non-zero"
+grep -qx 'BESZEL_PORT=8091' "$tmp/rendered.2" || fail "render_env: no stored BESZEL_PORT, template default not written"
+printf 'MONITOR_USER=old\n' > "$ENV_FILE"
+render_env > "$tmp/rendered.3" || fail "render_env with an env file lacking the key: exited non-zero"
+grep -qx 'BESZEL_PORT=8091' "$tmp/rendered.3" || fail "render_env: env file without the key, default not written"
+
+echo "health-sync install test: ok (7 checks, render_env 3 checks)"
