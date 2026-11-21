@@ -39,7 +39,7 @@ func Generate(stacks []healthfile.Stack) (string, error) {
 	b.WriteString("endpoints:\n")
 	for _, st := range stacks {
 		fmt.Fprintf(&b, "  # %s\n", st.ID)
-		endpoint(&b, st, "host", "icmp://"+st.Host, "", []string{"[CONNECTED] == true"})
+		endpoint(&b, st, "host", "icmp://"+st.Host, "", []string{"[CONNECTED] == true"}, false)
 
 		if len(st.Needs) == 0 {
 			fmt.Fprintf(&b, "  # %s: no dependencies declared, so its dependencies answer is n/a\n", st.ID)
@@ -49,10 +49,10 @@ func Generate(stacks []healthfile.Stack) (string, error) {
 			if !ok {
 				return "", fmt.Errorf("%s needs %q, which is not a stack in the health files", st.ID, need)
 			}
-			endpoint(&b, st, "dependencies ("+need+")", "tcp://"+dep.Service, "", []string{"[CONNECTED] == true"})
+			endpoint(&b, st, "dependencies ("+need+")", "tcp://"+dep.Service, "", []string{"[CONNECTED] == true"}, false)
 		}
 
-		endpoint(&b, st, "service", "tcp://"+st.Service, "", []string{"[CONNECTED] == true"})
+		endpoint(&b, st, "service", "tcp://"+st.Service, "", []string{"[CONNECTED] == true"}, false)
 
 		conds, err := rightAnswer(st)
 		if err != nil {
@@ -60,9 +60,9 @@ func Generate(stacks []healthfile.Stack) (string, error) {
 		}
 		if st.DNSName != "" {
 			// A DNS stack is asked its name at its DNS server, which is its service.
-			endpoint(&b, st, "right answer", st.Service, st.DNSName, conds)
+			endpoint(&b, st, "right answer", st.Service, st.DNSName, conds, st.Insecure)
 		} else {
-			endpoint(&b, st, "right answer", st.Request, "", conds)
+			endpoint(&b, st, "right answer", st.Request, "", conds, st.Insecure)
 		}
 	}
 	return b.String(), nil
@@ -91,8 +91,9 @@ func rightAnswer(st healthfile.Stack) ([]string, error) {
 // endpoint writes one Gatus endpoint for a stack: its name, `<stack>: <answer>`
 // (HL-FR-01, so a search by stack or by answer finds it), the stack as its
 // group, the URL to check, the conditions, and the phone alert. A non-empty
-// dnsName makes it a DNS query for that name, sent to url.
-func endpoint(b *strings.Builder, st healthfile.Stack, answer, url, dnsName string, conds []string) {
+// dnsName makes it a DNS query for that name, sent to url. insecure adds the
+// client block that skips certificate checks (DEV-FR-01).
+func endpoint(b *strings.Builder, st healthfile.Stack, answer, url, dnsName string, conds []string, insecure bool) {
 	name := st.ID + ": " + answer
 	fmt.Fprintf(b, "  - name: %s\n", yamlString(name))
 	fmt.Fprintf(b, "    group: %s\n", yamlString(st.ID))
@@ -101,6 +102,10 @@ func endpoint(b *strings.Builder, st healthfile.Stack, answer, url, dnsName stri
 		b.WriteString("    dns:\n")
 		fmt.Fprintf(b, "      query-name: %s\n", yamlString(dnsName))
 		b.WriteString("      query-type: \"A\"\n")
+	}
+	if insecure {
+		b.WriteString("    client:\n")
+		b.WriteString("      insecure: true\n")
 	}
 	b.WriteString("    interval: 10s\n")
 	b.WriteString("    conditions:\n")

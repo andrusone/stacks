@@ -1,0 +1,7 @@
+# Test target: insecure takes true or false only.
+host = "probe-b"
+service = "probe-b:8080"
+request = "http://probe-b:8080/"
+expect_status = 200
+insecure = yes
+needs = []

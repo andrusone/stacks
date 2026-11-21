@@ -1,0 +1,7 @@
+# DEV-FR-01: a device with a self-signed certificate; its right answer skips certificate checks.
+host = "dev-a"
+service = "dev-a:443"
+request = "https://dev-a:443/"
+expect_status = 200
+insecure = true
+needs = ["dev-b"]
