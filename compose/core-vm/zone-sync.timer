@@ -1,0 +1,10 @@
+# CORE-FR-07 (ST212): every 5 minutes, one minute after boot. Starts zone-sync.service.
+[Unit]
+Description=Run zone-sync every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
