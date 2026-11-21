@@ -1,0 +1,10 @@
+# Proxmox #1 (DEV-FR-02): its right answer is the Proxmox web UI on 8006
+# answering, at 10.10.8.21 in the zone. expect_status = 200 is the
+# architect's best guess for a healthy device; the owner's first run decides
+# it (a 302 or 401 for / is friction for rung 2, not a bug here).
+host = "10.10.8.21"
+service = "10.10.8.21:8006"
+request = "https://10.10.8.21:8006/"
+expect_status = 200
+insecure = true
+needs = []

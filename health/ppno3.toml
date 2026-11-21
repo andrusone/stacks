@@ -1,0 +1,10 @@
+# Omada controller OC200 (DEV-FR-02): its right answer is the controller's
+# management page on 443 answering, at 10.10.8.3 in the zone. expect_status =
+# 200 is the architect's best guess for a healthy device; the owner's first
+# run decides it (a 302 or 401 for / is friction for rung 2, not a bug here).
+host = "10.10.8.3"
+service = "10.10.8.3:443"
+request = "https://10.10.8.3/"
+expect_status = 200
+insecure = true
+needs = []
