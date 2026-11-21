@@ -1,0 +1,11 @@
+# HL-FR-09 (ST256): every 5 minutes, one minute after boot, and catches up after a missed run. Starts heartbeat.service.
+[Unit]
+Description=Send the outside heartbeat every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
