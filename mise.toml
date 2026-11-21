@@ -75,8 +75,8 @@ description = "Test compose/core-vm (ST212, CORE-FR-07 MVP 2): each compose/core
 run = "shellcheck compose/core-vm/*.sh && for t in compose/core-vm/test/*.test.sh; do bash \"$t\" || exit 1; done"
 
 [tasks.monitor-test]
-description = "Test the monitor's health sync (HL-FR-13, ST242): compose/monitor/test/*.test.sh with a temp bare origin and stubs; shellcheck of compose/monitor/health-sync.sh. No network"
-run = "shellcheck compose/monitor/health-sync.sh && for t in compose/monitor/test/*.test.sh; do bash \"$t\" || exit 1; done"
+description = "Test the monitor's health sync (HL-FR-13, ST242, ST247): compose/monitor/test/*.test.sh with a temp bare origin and stubs, and the timer installer with stubs and a temp etc folder; shellcheck of compose/monitor/health-sync.sh and health-sync-install.sh. No network"
+run = "shellcheck compose/monitor/health-sync.sh compose/monitor/health-sync-install.sh && for t in compose/monitor/test/*.test.sh; do bash \"$t\" || exit 1; done"
 
 [tasks.core-lan-prove]
 description = "Prove a core node from a LAN client (ST215, CORE-FR-10 MVP 2): mise run core-lan-prove -- <core-ip> [--closed <port>...]. One ok or FAIL line per check; needs dig and nc, ntpdate optional. No changes on the node"
