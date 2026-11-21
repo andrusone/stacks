@@ -22,14 +22,14 @@
 # - In this checkout: mise trust and mise install, so mise.toml is the tool list.
 # - Writes $MONITOR_DIR/gatus/config.yaml from `go run ./cmd/health generate health` (the stacks'
 #   health files; the starter stays in the compose file), through a temp file and mv, only when its text differs.
-# - The monitor's timers: the health sync (ST247, HL-FR-13) and the outside heartbeat (ST257, HL-FR-09),
-#   four units in /etc/systemd/system, run as this checkout's user, who joins the docker and monitor groups.
-#   compose/monitor/health-sync-install.sh does it; without systemd it prints the command. The env file
-#   gets a HEARTBEAT_URL line (empty until typed); the last line says heartbeat: on or off.
+# - The health sync's timer (ST247, HL-FR-13): health-sync.service and health-sync.timer in
+#   /etc/systemd/system, run as this checkout's user, who joins the docker and monitor groups.
+#   compose/monitor/health-sync-install.sh does it; without systemd it prints the command.
 # - systemctl enable docker, so the containers restart on boot. Without systemd it counts no change
 #   and prints the command to run.
-# - ufw: if it is active, allows exactly GATUS_PORT and NTFY_PORT (tcp) when not already allowed, and
-#   says so. If it is inactive, changes nothing and says so.
+# - ufw (ST264): compose/monitor/host.sh makes it default-deny and turns it on: SSH from MONITOR_ADMIN,
+#   GATUS_PORT, NTFY_PORT and BESZEL_PORT from MONITOR_LAN, the same in DOCKER-USER. MONITOR_LAN defaults to
+#   the default route's subnet; MONITOR_ADMIN to MONITOR_LAN; both may be set in the env file or the env.
 # - --check changes nothing and needs no sudo prompt: it lists each item as ok or missing (the Docker
 #   daemon too) and exits non-zero if anything is missing. --dry-run prints every step and changes nothing.
 # - Last, it prints the two addresses as "once started" and asks "Start the monitor now? [Y/n]" (yes by
@@ -229,35 +229,39 @@ settle() {
 	ENV_VAL[$name]="$answer"
 }
 
-# A value already in the env file (its last line for the key), else the default given. Keeps values
-# setup.sh does not ask for (BESZEL_PORT, HEARTBEAT_URL) across a rewrite of the file.
-stored_or() {
-	local v=""
-	[ -f "$ENV_FILE" ] && v="$(sed -n "s/^$1=//p" "$ENV_FILE" | tail -n1)"
-	printf '%s' "${v:-$2}"
+# The value the env file already has for a key setup.sh does not ask for (its last such line), else the
+# template's default. Keeps BESZEL_PORT across a rewrite (ST270).
+kept_or_default() {
+	if [ -f "$ENV_FILE" ] && grep -q "^$1=" "$ENV_FILE"; then
+		grep "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2-
+	else
+		echo "$2"
+	fi
 }
 
-# The env file's text: the template with the settled values filled in, comments kept, then the heartbeat line.
-# The outside heartbeat's URL (ST257, HL-FR-09) is never asked for, so never a stop: empty in a new file, so the
-# heartbeat stays off until the owner types it there.
+# The env file's text: the template with the settled values filled in, comments kept.
 render_env() {
 	local line key
 	while IFS= read -r line || [ -n "$line" ]; do
 		key="${line%%=*}"
 		if [[ $line == *=* && $key =~ ^[A-Z_]+$ ]]; then
-			echo "$key=${ENV_VAL[$key]:-$(stored_or "$key" "${line#*=}")}"
+			if [ -n "${ENV_VAL[$key]+set}" ]; then
+				echo "$key=${ENV_VAL[$key]}"
+			else
+				echo "$key=$(kept_or_default "$key" "${line#*=}")"
+			fi
 		else
 			echo "$line"
 		fi
 	done < "$ENV_EXAMPLE"
-	echo "# HEARTBEAT_URL: a dead-man's-switch URL from any outside service that alerts on silence; leave empty to turn the heartbeat off. Not asked by setup.sh: type it here."
-	echo "HEARTBEAT_URL=$(stored_or HEARTBEAT_URL '')"
 }
 
 # Writes the env file (mode 600, from mktemp) only when a value differs from the stored one.
 write_env_file() {
 	local tmp name same=1
 	read_env
+	# BESZEL_PORT is in the template but not asked: its stored value (or 8091) is written back, not the template's.
+	ENV_VAL[BESZEL_PORT]="$(env_optional BESZEL_PORT 8091)"
 	for name in "${ENV_KEYS[@]}"; do
 		settle "$name" || { echo "changes: $CHANGES"; exit 0; }
 		[ "${STORED[$name]:-}" = "${ENV_VAL[$name]}" ] || same=0
@@ -487,6 +491,22 @@ ufw_listing() {
 	fi
 }
 
+# The LAN's CIDR: the subnet of the default route's interface. Empty when there is no default route.
+lan_default() {
+	local dev
+	dev="$(ip -o -4 route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)"
+	[ -n "$dev" ] || return 0
+	ip -o -4 route show dev "$dev" proto kernel scope link 2>/dev/null | awk '{ print $1; exit }'
+}
+
+# A value from the env file (MONITOR_LAN, MONITOR_ADMIN, BESZEL_PORT: not asked, so not in ENV_KEYS),
+# else the default given. Read with sed, never sourced.
+env_optional() {
+	local v=""
+	[ -f "$ENV_FILE" ] && v="$(sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1)"
+	echo "${v:-$2}"
+}
+
 # --- start the monitor -----------------------------------------------------
 
 # Asks "Start the monitor now? [Y/n]" (yes by default). Starts only on an explicit yes (Enter counts)
@@ -605,17 +625,17 @@ run_check() {
 	if [ -z "$problems" ]; then
 		hs_check
 	else
-		report missing "monitor timers and user" "they need the env file first"
+		report missing "health-sync timer and user" "they need the env file first"
 	fi
 
 	if ! command -v ufw >/dev/null 2>&1; then
-		echo "ufw: not installed, nothing to open"
+		report missing "ufw" "not installed: sudo apt-get install -y ufw (the golden image provides it)"
 	elif [ -n "$problems" ]; then
 		echo "ufw: not checked until the env file is complete"
 	elif ! listing="$(ufw_listing)"; then
 		echo "ufw: not read without a sudo prompt; ./setup.sh (run mode) checks it"
 	elif ! grep -q '^Status: active' <<< "$listing"; then
-		echo "ufw: inactive, nothing to open"
+		report missing "ufw active" "ufw is off: ./setup.sh (run mode) sets the monitor's rules and turns it on"
 	else
 		for port in "$GATUS_PORT" "$NTFY_PORT"; do
 			if grep -Eq "^${port}/tcp[[:space:]]+ALLOW" <<< "$listing"; then
@@ -725,32 +745,42 @@ else
 	change "systemctl enable docker (sudo)" sudo systemctl enable docker
 fi
 
-# 7b. The health sync's timer (ST247) and the heartbeat's (ST257): see compose/monitor/health-sync-install.sh.
+# 7b. The health sync's timer (ST247): see compose/monitor/health-sync-install.sh.
 hs_run
 
-# 8. ufw: open exactly the two ports this stack publishes, and only when ufw is active.
-if ! command -v ufw >/dev/null 2>&1; then
-	echo "ufw: not installed, nothing to open"
-elif ! ufw_state="$(ufw_listing)" || ! grep -q '^Status: active' <<< "$ufw_state"; then
-	echo "ufw: inactive, so no port was opened"
+# 8. ufw (ST264): compose/monitor/host.sh sets the rules and turns ufw on. Its "changes: n" joins ours. A
+# dry run runs it with --dry-run (no sudo, nothing changed) and prints what it would do.
+ufw_step() {
+	local runner=(sudo) flag=() out="" status=0 n
+	if [ "$DRY_RUN" -eq 1 ]; then runner=(); flag=(--dry-run); fi
+	out="$("${runner[@]}" env MONITOR_LAN="$MONITOR_LAN" MONITOR_ADMIN="$MONITOR_ADMIN" \
+		GATUS_PORT="$GATUS_PORT" NTFY_PORT="$NTFY_PORT" BESZEL_PORT="$BESZEL_PORT" \
+		bash "$REPO_DIR/compose/monitor/host.sh" "${flag[@]}" 2>&1)" || status=$?
+	grep -v '^changes: ' <<< "$out" || true
+	n="$(sed -n 's/^changes: //p' <<< "$out" | tail -n 1)"
+	CHANGES=$((CHANGES + ${n:-0}))
+	if [ "$status" -ne 0 ]; then
+		stop_or_note "ufw was not set (host.sh said why above)"
+		return 0
+	fi
+	if [ "$DRY_RUN" -eq 0 ]; then
+		echo "ufw: active, ports 22/tcp from $MONITOR_ADMIN, $GATUS_PORT/tcp, $NTFY_PORT/tcp, $BESZEL_PORT/tcp from $MONITOR_LAN"
+	fi
+}
+MONITOR_LAN="${MONITOR_LAN:-$(env_optional MONITOR_LAN "$(lan_default)")}"
+MONITOR_ADMIN="${MONITOR_ADMIN:-$(env_optional MONITOR_ADMIN "$MONITOR_LAN")}"
+BESZEL_PORT="${BESZEL_PORT:-$(env_optional BESZEL_PORT 8091)}"
+if [ -z "$MONITOR_LAN" ]; then
+	stop_or_note "MONITOR_LAN has no default (no default route): set it in $ENV_FILE to the LAN's CIDR, for example 192.168.1.0/24"
 else
-	for port in "$GATUS_PORT" "$NTFY_PORT"; do
-		if grep -Eq "^${port}/tcp[[:space:]]+ALLOW" <<< "$ufw_state"; then
-			step "ufw already allows ${port}/tcp"
-		else
-			change "ufw: allow ${port}/tcp (the monitor's port) (sudo)" sudo ufw allow "${port}/tcp"
-		fi
-	done
+	ufw_step
 fi
 
 # 9. The addresses apply only once the monitor is started; then offer to start it.
 echo ""
 echo "Gatus: http://$MONITOR_BIND:$GATUS_PORT (once started)   ntfy: http://$MONITOR_BIND:$NTFY_PORT (once started)"
-if [ -n "$(stored_or HEARTBEAT_URL '')" ]; then
-	echo "heartbeat: on"
-else
-	echo "heartbeat: off (set HEARTBEAT_URL)"
-fi
+# The outside heartbeat (ST257): on once HEARTBEAT_URL has a value in the env file.
+if grep -q '^HEARTBEAT_URL=.' "$ENV_FILE" 2>/dev/null; then echo "heartbeat: on"; else echo "heartbeat: off (set HEARTBEAT_URL)"; fi
 start_status=0
 start_offer || start_status=$?
 echo "changes: $CHANGES"

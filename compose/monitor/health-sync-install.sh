@@ -1,16 +1,40 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2329
-# The monitor's timers, sourced by setup.sh: the health sync (HL-FR-13, ST247) and the outside heartbeat
-# (HL-FR-09, ST257). The units run as the checkout's user, so the checkout gets no root-owned files. That
-# user joins the docker group (restarts Gatus) and the monitor's group, and the monitor folders become
-# group-writable with setgid (config.yaml, the marker). The heartbeat reads compose/monitor/.env, which
-# only that user can read, so it runs as the same user.
+# The health sync's timer (HL-FR-13, ST247), sourced by setup.sh. The units run as the checkout's user,
+# so the checkout gets no root-owned files. That user joins the docker group (restarts Gatus) and the
+# monitor's group, and the monitor folders become group-writable with setgid (config.yaml, the marker).
 HEALTH_SYNC_UNITS="${HEALTH_SYNC_UNITS:-/etc/systemd/system}"
 HS_SRC="$REPO_DIR/compose/monitor"
 HS_UNITS=(health-sync.service health-sync.timer heartbeat.service heartbeat.timer)
 HS_TIMERS=(health-sync.timer heartbeat.timer)
+# The deploy key the pull uses (ST261, made by git-access --role prod) and the SSH address of the repo.
+HS_KEY="${HS_KEY:-$HOME/.ssh/id_ed25519_github}"
+HS_ORIGIN_SSH=git@github.com:andrusone/stacks.git
 
-# The unit text to install: for a service, ExecStart (the checkout's script of the same name) and User= filled in.
+# True when origin is a path or file:// (the NAS clone). An SSH, https or no origin is not local.
+hs_origin_is_local() {
+	local url
+	url="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null)" || return 1
+	case "$url" in
+	file://*) return 0 ;;
+	git@* | *://*) return 1 ;;
+	esac
+	return 0
+}
+
+# A local origin becomes the SSH address once the key exists; without the key it is left alone and says how to get one.
+hs_origin() {
+	local url
+	hs_origin_is_local || return 0
+	url="$(git -C "$REPO_DIR" remote get-url origin)"
+	if [ ! -f "$HS_KEY" ]; then
+		echo "health-sync origin: $url is a local path and there is no deploy key at $HS_KEY, so origin is left alone; run git-access --role prod --deploy-repo andrusone/stacks, then rerun"
+		return 0
+	fi
+	change "health-sync origin: $url -> $HS_ORIGIN_SSH (the deploy key is there)" git -C "$REPO_DIR" remote set-url origin "$HS_ORIGIN_SSH"
+}
+
+# The unit text to install: ExecStart and User= filled in for this checkout.
 hs_unit_text() {
 	if [ "${1##*.}" != service ]; then
 		cat "$HS_SRC/$1"
@@ -29,11 +53,9 @@ hs_units_ok() {
 }
 
 # Read only: every timer is enabled and running.
-hs_timers_running() {
+hs_timers_on() {
 	local timer
-	for timer in "${HS_TIMERS[@]}"; do
-		systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer" 2>/dev/null || return 1
-	done
+	for timer in "${HS_TIMERS[@]}"; do systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer" || return 1; done
 }
 
 hs_install_unit() {
@@ -65,7 +87,7 @@ hs_grant() {
 # reload, one per timer. A rerun counts none.
 hs_units() {
 	local unit timer units_changed=0
-	step "monitor timers: units, then health-sync and heartbeat enabled"
+	step "health-sync and heartbeat: units and timers"
 	for unit in "${HS_UNITS[@]}"; do
 		if ! cmp -s <(hs_unit_text "$unit") "$HEALTH_SYNC_UNITS/$unit" 2>/dev/null; then
 			change "install $HEALTH_SYNC_UNITS/$unit (ExecStart and User= for this checkout) (sudo)" hs_install_unit "$unit"
@@ -74,7 +96,7 @@ hs_units() {
 	done
 	if [ "$units_changed" -eq 1 ]; then change "systemctl daemon-reload (sudo)" sudo systemctl daemon-reload; fi
 	for timer in "${HS_TIMERS[@]}"; do
-		if systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer" 2>/dev/null; then
+		if systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer"; then
 			step "$timer is enabled and running"
 		else
 			change "systemctl enable --now $timer (sudo)" sudo systemctl enable --now "$timer"
@@ -84,8 +106,9 @@ hs_units() {
 
 # Without systemd nothing changes and the command is printed. The group grants apply at the next start.
 hs_run() {
+	hs_origin
 	if ! systemd_present; then
-		echo "monitor timers (health-sync, heartbeat): no systemd here, so they are not installed or enabled. On a systemd host ./setup.sh does them; by hand: sudo systemctl enable --now health-sync.timer heartbeat.timer"
+		echo "health-sync timer: no systemd here, so it is not installed or enabled. On a systemd host ./setup.sh does both; by hand: sudo systemctl enable --now health-sync.timer"
 		return 0
 	fi
 	hs_units
@@ -104,10 +127,10 @@ hs_check() {
 		report missing "health-sync user $RUN_USER" "not in docker and the monitor group, or folders not group-writable"
 	fi
 	if ! systemd_present; then
-		echo "monitor timers (health-sync, heartbeat): not applicable (no systemd)"
-	elif hs_units_ok && hs_timers_running; then
-		report ok "monitor timers (health-sync, heartbeat)" "units current, enabled and running"
+		echo "health-sync timer: not applicable (no systemd)"
+	elif hs_units_ok && hs_timers_on; then
+		report ok "health-sync timer" "units current, enabled and running"
 	else
-		report missing "monitor timers (health-sync, heartbeat)" "units not installed or current, or a timer is not enabled and running"
+		report missing "health-sync timer" "units not installed or current, or a timer is not enabled and running"
 	fi
 }

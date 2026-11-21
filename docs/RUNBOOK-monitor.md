@@ -105,31 +105,13 @@ curl -d "hello" http://<MONITOR_BIND>:<NTFY_PORT>/<NTFY_TOPIC>      # curl, on t
 
 The message should arrive on the phone within seconds.
 
-## 4b. The outside heartbeat: a message when the monitor goes quiet
+## 4b. The outside heartbeat (silence alert)
 
-Gatus and ntfy run on the monitor, so they cannot tell you the monitor itself is down. An outside dead-man's-switch service can: the monitor pings it every 5 minutes while Gatus answers, and when the pings stop, the service alerts you.
+The monitor pings an outside service every 5 minutes while its own Gatus answers. If the monitor goes quiet, the outside service alerts you. Setup prints `heartbeat: on` or `heartbeat: off (set HEARTBEAT_URL)`.
 
-1. At an outside dead-man's-switch service that alerts on silence (a free check is enough), make a check with a **15 minute grace**. Copy its ping URL. It is a secret: do not paste it into git, a story or a chat.
-2. On the VM, set it in the env file with an editor (an editor, on the VM, over the ssh session). A monitor set up before this change has no `HEARTBEAT_URL` line yet: add it at the end of the file:
-
-   ```
-   nano compose/monitor/.env      # editor, on the VM: set HEARTBEAT_URL= to the ping URL (add the line if it is not there), then save
-   ```
-
-3. Run setup again (`./setup.sh`, on the VM). Its last lines say `heartbeat: on`. Leave `HEARTBEAT_URL` empty and the last line says `heartbeat: off (set HEARTBEAT_URL)`, and the heartbeat sends nothing.
-4. Prove it. On the VM, stop Docker, which stops the monitor:
-
-   ```
-   sudo systemctl stop docker      # sudo and systemctl, on the VM: the monitor stops
-   ```
-
-   A message arrives from the outside service within 15 minutes. Then start it again:
-
-   ```
-   sudo systemctl start docker     # sudo and systemctl, on the VM: the monitor comes back
-   ```
-
-   Check the status page as in section 3.
+1. Make a free dead-man's-switch check at an outside service (any one that alerts on silence) with a **15 minute grace**.
+2. Put its URL in `compose/monitor/.env` as `HEARTBEAT_URL=<the URL>` (over the ssh session on the VM, not in git).
+3. Prove it: `sudo systemctl stop docker` on the VM. A message arrives within 15 minutes. Then `sudo systemctl start docker`.
 
 ## 5. What this does not cover
 
