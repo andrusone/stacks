@@ -1,0 +1,12 @@
+# HL-FR-14 (ST260): every night at 03:15, plus up to 10 minutes of random delay; a run missed while the VM was
+# off runs at the next boot. Starts backup.service. The installer enables it only once the backup folder exists.
+[Unit]
+Description=Run the monitor backup every night
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

@@ -113,9 +113,29 @@ The monitor pings an outside service every 5 minutes while its own Gatus answers
 2. Put its URL in `compose/monitor/.env` as `HEARTBEAT_URL=<the URL>` (over the ssh session on the VM, not in git).
 3. Prove it: `sudo systemctl stop docker` on the VM. A message arrives within 15 minutes. Then `sudo systemctl start docker`.
 
+## 4c. Backup
+
+The monitor backs itself up every night at 03:15 (up to 10 minutes later, at random): `backup.timer` on the VM runs `compose/monitor/backup.sh` as your normal user. `setup.sh` installs and enables it with the health sync's timer.
+
+- **What is saved:** Gatus's history and the Beszel hub's data folder, in one archive, except the hub's private key (`id_ed25519`), which is a secret and is never saved. The ntfy folder and `.env` are never saved either, because the ntfy cache can hold your topic.
+- **Where:** `/nas/cloud-backup/services/monitor/backup`, as `monitor-<UTC time>.tar.gz`. Everything under cloud-backup is sent to the cloud.
+- **How many:** the newest 7 archives are kept.
+- **The folder must exist:** the timer is enabled only when that folder exists; `./host/nas-layout.sh` makes it. Without it, `setup.sh` says so in one line and enables nothing.
+
+To check the next run, on the VM: `systemctl list-timers backup.timer` (systemctl, on the VM).
+
+**Restore on a new VM:** do this after section 2, and answer `n` at setup's last question so the monitor does not start yet.
+
+```
+ls -t /nas/cloud-backup/services/monitor/backup/monitor-*.tar.gz | head -1      # ls, on the VM: prints the newest archive
+tar -xzf <that archive> -C <MONITOR_DIR>      # tar, on the VM: unpacks gatus/ and beszel/ into the monitor's folder (MONITOR_DIR in compose/monitor/.env, /srv/monitor by default)
+```
+
+Then give `NTFY_TOPIC` again from your own record of it (the ntfy app on your phone shows the topic). Your phone resubscribes to the same topic; nothing on the phone changes. Then start the monitor as in section 2. The Beszel hub's key is not reconnected by any step yet (section 5).
+
 ## 5. What this does not cover
 
-- Beszel (the host's health stays "unknown" for now; the host check is only a network check).
+- Beszel (the host's health stays "unknown" for now; the host check is only a network check). Reconnecting the Beszel hub's key after a restore.
 - The timer that pulls new checks from git.
 - Rebuilding the monitor alone from scratch.
 - Protection against a bad commit: a broken check file is not rejected yet.

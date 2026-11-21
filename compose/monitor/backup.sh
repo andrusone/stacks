@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The monitor's state backup (HL-FR-14, MVP 3, ST250, ST259). Copies what is not a secret under $MONITOR_DIR,
-# Gatus's history (gatus/history) and the Beszel hub's data (beszel), into $MONITOR_BACKUP as
+# Gatus's history (gatus/history) and the Beszel hub's data (beszel, minus its private key id_ed25519, ST260), into $MONITOR_BACKUP as
 # monitor-<UTC yyyymmddThhmmssZ>.tar.gz, written under a temporary name and renamed when complete. Only the 7
 # newest monitor-* archives are kept. The ntfy folder is never archived: its cache.db may hold the topic, a
 # secret (HL-NFR-02), and the topic is given again on a rebuild. Values come from the environment, else from
@@ -38,7 +38,7 @@ name="monitor-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 part="$backup/.$name.part"
 trap 'rm -f -- "$part"' EXIT
 if [ "${#members[@]}" -gt 0 ]; then
-	tar -C "$mon" -czf "$part" --exclude='.env' --exclude='cache.db' --exclude='*ntfy*' "${members[@]}"
+	tar -C "$mon" -czf "$part" --exclude='.env' --exclude='cache.db' --exclude='*ntfy*' --exclude='id_ed25519*' "${members[@]}"
 else
 	echo "monitor-backup: nothing to back up in $mon" >&2
 	tar -czf "$part" -T /dev/null

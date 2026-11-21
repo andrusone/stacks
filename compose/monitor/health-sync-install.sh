@@ -1,12 +1,13 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2329
-# The health sync's timer (HL-FR-13, ST247), sourced by setup.sh. The units run as the checkout's user,
+# The health sync's and the state backup's timers (HL-FR-13, ST247; HL-FR-14, ST260), sourced by setup.sh. The units run as the checkout's user,
 # so the checkout gets no root-owned files. That user joins the docker group (restarts Gatus) and the
 # monitor's group, and the monitor folders become group-writable with setgid (config.yaml, the marker).
 HEALTH_SYNC_UNITS="${HEALTH_SYNC_UNITS:-/etc/systemd/system}"
 HS_SRC="$REPO_DIR/compose/monitor"
-HS_UNITS=(health-sync.service health-sync.timer heartbeat.service heartbeat.timer)
-HS_TIMERS=(health-sync.timer heartbeat.timer)
+HS_UNITS=(health-sync.service health-sync.timer heartbeat.service heartbeat.timer backup.service backup.timer)
+HS_TIMERS=(health-sync.timer heartbeat.timer backup.timer)
+BACKUP_DIR="${MONITOR_BACKUP:-/nas/cloud-backup/services/monitor/backup}"
 # The deploy key the pull uses (ST261, made by git-access --role prod) and the SSH address of the repo.
 HS_KEY="${HS_KEY:-$HOME/.ssh/id_ed25519_github}"
 HS_ORIGIN_SSH=git@github.com:andrusone/stacks.git
@@ -52,10 +53,18 @@ hs_units_ok() {
 	done
 }
 
-# Read only: every timer is enabled and running.
+# The backup timer waits for its NAS folder (host/nas-layout.sh makes it): until it exists, the timer is not wanted.
+hs_waits() {
+	[ "$1" = backup.timer ] && [ ! -d "$BACKUP_DIR" ]
+}
+
+# Read only: every timer that is wanted is enabled and running.
 hs_timers_on() {
 	local timer
-	for timer in "${HS_TIMERS[@]}"; do systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer" || return 1; done
+	for timer in "${HS_TIMERS[@]}"; do
+		hs_waits "$timer" && continue
+		systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer" || return 1
+	done
 }
 
 hs_install_unit() {
@@ -96,7 +105,9 @@ hs_units() {
 	done
 	if [ "$units_changed" -eq 1 ]; then change "systemctl daemon-reload (sudo)" sudo systemctl daemon-reload; fi
 	for timer in "${HS_TIMERS[@]}"; do
-		if systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer"; then
+		if hs_waits "$timer"; then
+			echo "backup timer: not enabled, the backup folder $BACKUP_DIR is missing; host/nas-layout.sh makes it"
+		elif systemctl is-enabled --quiet "$timer" 2>/dev/null && systemctl is-active --quiet "$timer"; then
 			step "$timer is enabled and running"
 		else
 			change "systemctl enable --now $timer (sudo)" sudo systemctl enable --now "$timer"

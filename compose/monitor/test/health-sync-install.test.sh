@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The health-sync timer's installer test (ST247, HL-FR-13). Sources the real compose/monitor/health-sync-install.sh
+# The monitor timers' installer test (ST247 health sync, HL-FR-13; ST260 backup, HL-FR-14). Sources the real compose/monitor/health-sync-install.sh
 # with the helpers setup.sh provides (change, step, report) copied here, and stubs for sudo, systemctl and id,
 # so nothing is installed on this machine. The units go to a temp etc folder, the groups to a temp file, and the
 # monitor folders are temp folders; the temp folder is removed on exit. The origin (ST261): a path origin becomes SSH
@@ -86,7 +86,8 @@ id() {
 mkdir -p "$tmp/checkout/compose/monitor" "$tmp/monitor/gatus" "$tmp/etc/systemd/system"
 cp "$src/compose/monitor/health-sync.sh" "$src/compose/monitor/health-sync.service" \
 	"$src/compose/monitor/health-sync.timer" "$src/compose/monitor/heartbeat.service" \
-	"$src/compose/monitor/heartbeat.timer" "$tmp/checkout/compose/monitor/"
+	"$src/compose/monitor/heartbeat.timer" "$src/compose/monitor/backup.sh" \
+	"$src/compose/monitor/backup.service" "$src/compose/monitor/backup.timer" "$tmp/checkout/compose/monitor/"
 cp "$src/compose/monitor/health-sync-install.sh" "$tmp/checkout/compose/monitor/"
 chmod 755 "$tmp/monitor" "$tmp/monitor/gatus"
 
@@ -99,6 +100,8 @@ DRY_RUN=0
 CHECK=0
 HEALTH_SYNC_UNITS="$tmp/etc/systemd/system"
 # shellcheck source=/dev/null
+export MONITOR_BACKUP="$tmp/nas/backup"
+mkdir -p "$MONITOR_BACKUP"
 source "$src/compose/monitor/health-sync-install.sh"
 
 # 1. A dry run lists the steps and creates nothing.
@@ -113,7 +116,7 @@ CHANGES=0
 
 # 2. The first run installs and enables, and counts its changes.
 hs_run
-[ "$CHANGES" -eq 8 ] || fail "first run: expected 8 changes (4 units, reload, 2 enables, groups), got $CHANGES"
+[ "$CHANGES" -eq 11 ] || fail "first run: expected 11 changes (6 units, reload, 3 enables, groups), got $CHANGES"
 svc="$tmp/etc/systemd/system/health-sync.service"
 grep -qx "ExecStart=$src/compose/monitor/health-sync.sh" "$svc" && fail "ExecStart points at the source checkout, not the test checkout"
 grep -qx "ExecStart=$tmp/checkout/compose/monitor/health-sync.sh" "$svc" || fail "ExecStart is not this checkout's script"
@@ -127,6 +130,12 @@ cmp -s "$tmp/etc/systemd/system/heartbeat.timer" "$src/compose/monitor/heartbeat
 [ -f "$TIMER_STATE-heartbeat.timer" ] || fail "the heartbeat timer was not enabled"
 grep -q "^enable --now health-sync.timer$" "$STUB_LOG" || fail "enable --now not called: $(cat "$STUB_LOG")"
 grep -q "^enable --now heartbeat.timer$" "$STUB_LOG" || fail "enable --now heartbeat.timer not called"
+grep -q "^enable --now backup.timer$" "$STUB_LOG" || fail "enable --now backup.timer not called"
+[ -f "$TIMER_STATE-backup.timer" ] || fail "the backup timer was not enabled"
+bsvc="$tmp/etc/systemd/system/backup.service"
+grep -qx "ExecStart=$tmp/checkout/compose/monitor/backup.sh" "$bsvc" || fail "backup ExecStart is not this checkout's backup.sh"
+grep -qx "User=$RUN_USER" "$bsvc" || fail "no User=$RUN_USER in the backup service"
+cmp -s "$tmp/etc/systemd/system/backup.timer" "$src/compose/monitor/backup.timer" || fail "backup timer unit differs from the checkout's file"
 grep -qx docker "$GROUPS_FILE" || fail "$RUN_USER not added to docker"
 [ "$(stat -c %A "$MONITOR_DIR" | cut -c6)" = w ] || fail "$MONITOR_DIR not group-writable"
 [ "$(stat -c %A "$GATUS_DIR" | cut -c6)" = w ] || fail "$GATUS_DIR not group-writable"
@@ -156,6 +165,19 @@ MISSING=()
 rm -f "$TIMER_STATE"-* "$GROUPS_FILE"
 hs_check > "$tmp/check2.out"
 [ "${#MISSING[@]}" -eq 2 ] || fail "--check on a fresh machine: expected 2 missing, got ${MISSING[*]:-none}"
+
+# 6b. The backup timer waits for its folder (ST260): with the folder missing, no backup timer is enabled and one line
+# says so; once the folder exists, the next run enables it.
+HEALTH_SYNC_UNITS="$tmp/etc/systemd/system"
+BACKUP_DIR="$tmp/nas/absent"
+: > "$STUB_LOG"
+hs_run > "$tmp/nobackup.out"
+grep -qx "backup timer: not enabled, the backup folder $tmp/nas/absent is missing; host/nas-layout.sh makes it" "$tmp/nobackup.out" || fail "missing backup folder: no one-line message: $(cat "$tmp/nobackup.out")"
+grep -q "backup.timer" "$STUB_LOG" && fail "missing backup folder: a backup timer command ran: $(cat "$STUB_LOG")"
+[ ! -f "$TIMER_STATE-backup.timer" ] || fail "missing backup folder: the backup timer is enabled"
+BACKUP_DIR="$MONITOR_BACKUP"
+hs_run > "$tmp/withbackup.out"
+[ -f "$TIMER_STATE-backup.timer" ] || fail "backup folder exists: the backup timer was not enabled: $(cat "$tmp/withbackup.out")"
 
 # 7. The origin (ST261): a path origin becomes SSH once the key exists (one change, a second run counts none);
 # without the key a path origin is left alone and the message says how to get one; an SSH origin is unchanged.
@@ -210,4 +232,4 @@ printf 'MONITOR_USER=old\n' > "$ENV_FILE"
 render_env > "$tmp/rendered.3" || fail "render_env with an env file lacking the key: exited non-zero"
 grep -qx 'BESZEL_PORT=8091' "$tmp/rendered.3" || fail "render_env: env file without the key, default not written"
 
-echo "health-sync install test: ok (7 checks, render_env 3 checks)"
+echo "monitor timers install test: ok (8 checks, render_env 3 checks)"
