@@ -33,7 +33,13 @@ cat > "$tmp/bin/named-checkzone" <<'STUB'
 if grep -q BAD-ZONE "$2"; then echo "zone $1: BAD-ZONE (stub)" >&2; exit 1; fi
 echo "zone $1: loaded (stub)"
 STUB
-chmod +x "$tmp/bin/docker" "$tmp/bin/named-checkzone"
+cat > "$tmp/bin/ssh" <<'STUB'
+#!/usr/bin/env bash
+# Test stub for ssh (ST252): logs its arguments and fails, so the SSH clone stops there.
+echo "ssh $*" >> "$STUB_SSH_LOG"
+exit 255
+STUB
+chmod +x "$tmp/bin/docker" "$tmp/bin/named-checkzone" "$tmp/bin/ssh"
 export STUB_BIN="$tmp/bin"
 export PATH="$tmp/bin:$PATH"
 
@@ -95,4 +101,22 @@ sync_run
 grep -q "origin pull failed" <<< "$msg" || fail "origin removed: no line says the pull failed: $msg"
 grep -q "^www IN A 192.0.2.20$" "$tmp/out/db.core.example" || fail "origin removed lost the copy"
 
-echo "zone-sync test: ok (4 checks)"
+# 5. The SSH form (ST252): ssh gets the deploy key, IdentitiesOnly, BatchMode and the key folder's
+# known_hosts, never StrictHostKeyChecking=no. The stub fails the clone: exit 0, one line, no copy.
+key="$tmp/home/.ssh/id_ed25519_github"
+mkdir -p "$tmp/home/.ssh"
+: > "$key"
+export STUB_SSH_LOG="$tmp/ssh.log"
+rc=0
+msg="$(CORE_ZONE_URL=git@github.com:andrusone/zone.git CORE_ZONE_KEY="$key" CORE_ZONE_DIR="$tmp/ssh-clone" \
+	CORE_ZONE_OUT="$tmp/ssh-out" CORE_ZONE_NAME=core.example bash "$script" 2>&1)" || rc=$?
+[ "$rc" -eq 0 ] || fail "ssh form exited $rc: $msg"
+grep -q "origin clone failed" <<< "$msg" || fail "ssh form: no line says the clone failed: $msg"
+[ ! -e "$tmp/ssh-out/db.core.example" ] || fail "ssh form wrote a copy without a clone"
+grep -qF -- "-i $key " "$STUB_SSH_LOG" || fail "ssh command line has no -i with the deploy key: $(cat "$STUB_SSH_LOG")"
+grep -qF -- "IdentitiesOnly=yes" "$STUB_SSH_LOG" || fail "ssh command line has no IdentitiesOnly=yes"
+grep -qF -- "BatchMode=yes" "$STUB_SSH_LOG" || fail "ssh command line has no BatchMode=yes"
+grep -qF -- "UserKnownHostsFile=$tmp/home/.ssh/known_hosts" "$STUB_SSH_LOG" || fail "ssh command line does not trust the key folder's known_hosts"
+! grep -qi "StrictHostKeyChecking" "$STUB_SSH_LOG" || fail "ssh command line turns off host key checking"
+
+echo "zone-sync test: ok (5 checks)"

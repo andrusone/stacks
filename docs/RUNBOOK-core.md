@@ -33,6 +33,16 @@ Then run `sudo netplan apply` on the VM.
 
 The setup does not change the VM's resolver. Reading `compose/core-vm/setup.sh`, `host.sh` and `setup-stages.sh`, its stages are preflight, `host.sh` (chrony, ufw and Docker's ports), the zone-sync units, a first zone sync and `core-up`. None of them writes netplan or `resolv.conf`. So after the setup the VM keeps the resolver you gave it, and you set it again by hand if you want it to ask its own DNS.
 
+## 3b. Only for a `git@` zone URL: the deploy key
+
+Skip this unless `CORE_ZONE_URL` is `git@github.com:owner/repo.git`. The VM then needs a read-only deploy key for that repository, in `~/.ssh/id_ed25519_github` of the user who runs the setup. In a clone of `machine` on the VM, run:
+
+```
+./tools/git-access/git-access.sh --role prod --deploy-repo andrusone/zone
+```
+
+It makes the key and prints its public half with the GitHub "add deploy key" page. Register that public key on `andrusone/zone` as a read-only deploy key, by hand. The setup never reads, copies or prints the key. If the key is missing, the setup stops before it writes anything and prints this command again.
+
 ## 4. Run the setup
 
 On the VM, in the `stacks` folder:

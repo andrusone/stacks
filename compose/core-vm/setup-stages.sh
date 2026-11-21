@@ -8,6 +8,8 @@ ETC="${CORE_ROOT:-}/etc"
 ZONE_DIR=/var/lib/core/zone
 ZONE_NAME=core.andrusonline.com
 CORE_CONTAINERS=(core-bind core-unbound core-chrony)
+# The deploy key git-access makes for the prod role (ST252). setup.sh runs as the owner, so this is the owner's home.
+ZONE_KEY="$HOME/.ssh/id_ed25519_github"
 
 # A missing requirement: a real run exits 2; --dry-run says what a real run would stop on and goes on.
 stop() {
@@ -24,7 +26,7 @@ hint() {
 		CORE_BIND) echo "this VM's IPv4 address" ;;
 		CORE_LAN) echo "the LAN as an IPv4 CIDR, for example 192.168.1.0/24" ;;
 		CORE_ADMIN) echo "the IPv4 address or CIDR allowed to SSH in" ;;
-		CORE_ZONE_URL) echo "an http(s) URL with an address, not a name, for example http://192.168.1.20/zone.git; or an absolute path to a clone or bare repository, for example /nas/projects/andrusone/zone; or a file:// URL of one" ;;
+		CORE_ZONE_URL) echo "an http(s) URL with an address, not a name, for example http://192.168.1.20/zone.git; or an absolute path to a clone or bare repository, for example /nas/projects/andrusone/zone; or a file:// URL of one; or git@github.com:owner/repo.git with a deploy key" ;;
 		CORE_ROLE) echo "primary or secondary" ;;
 		CORE_PEER) echo "the other node's IPv4 address; empty until it exists" ;;
 	esac
@@ -49,7 +51,7 @@ valid_value() {
 		CORE_BIND) [[ $v =~ ^$ip$ ]] ;;
 		CORE_LAN) [[ $v =~ ^$ip/[0-9]{1,2}$ ]] ;;
 		CORE_ADMIN) [[ $v =~ ^$ip(/[0-9]{1,2})?$ ]] ;;
-		CORE_ZONE_URL) [[ $v =~ ^https?://$ip(:[0-9]+)?(/[^[:space:]]*)?$ ]] || [[ $v == /* && -d $v ]] || [[ $v == file:///* && -d ${v#file://} ]] ;;
+		CORE_ZONE_URL) [[ $v =~ ^https?://$ip(:[0-9]+)?(/[^[:space:]]*)?$ ]] || [[ $v == /* && -d $v ]] || [[ $v == file:///* && -d ${v#file://} ]] || [[ $v =~ ^git@github\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$ ]] ;;
 		CORE_ROLE) [ "$v" = primary ] || [ "$v" = secondary ] ;;
 		CORE_PEER) [ -z "$v" ] || [[ $v =~ ^$ip$ ]] ;;
 	esac
@@ -116,6 +118,7 @@ preflight() {
 	[ -d "${CORE_ROOT:-}/run/systemd/system" ] || stop "systemd is not running: a core node is a VM with systemd, not a container or a WSL shell"
 	command -v docker >/dev/null 2>&1 || stop "Docker is missing: install the engine first (docs/RUNBOOK-host.md)"
 	command -v mise >/dev/null 2>&1 || stop "mise is missing: install it first (docs/RUNBOOK-host.md)"
+	zone_key_check
 }
 
 # host.sh with the node's LAN, admin and peer values. It checks first itself; its "changes: n" is added here.
@@ -135,6 +138,15 @@ run_host() {
 	n="$(sed -n 's/^changes: //p' "$out")"
 	CHANGES=$((CHANGES + ${n:-0}))
 	rm -f "$out"
+}
+
+# The SSH form of CORE_ZONE_URL needs the deploy key on this machine. Checked before anything is written:
+# a missing key stops with the one command to run. The key is checked for existence only, never read.
+zone_key_check() {
+	[[ ${VAL[CORE_ZONE_URL]} == git@* ]] || return 0
+	if [ ! -f "$ZONE_KEY" ]; then
+		stop "no deploy key at $ZONE_KEY. In a clone of machine (as the runbook says), run ./tools/git-access/git-access.sh --role prod --deploy-repo andrusone/zone, then register the public key it prints as a read-only deploy key on andrusone/zone by hand"
+	fi
 }
 
 # The zone-sync units and /etc/core/zone-sync.env, then the timer. The service's ExecStart is this
@@ -157,6 +169,8 @@ zone_units() {
 CORE_ZONE_DIR=$ZONE_DIR
 CORE_ZONE_OUT=$REPO_DIR/compose/core/bind/zone
 CORE_ZONE_NAME=$ZONE_NAME"
+	if [[ ${VAL[CORE_ZONE_URL]} == git@* ]]; then env_want+="
+CORE_ZONE_KEY=$ZONE_KEY"; fi
 	if [ "$(cat "$ETC/core/zone-sync.env" 2>/dev/null || true)" != "$env_want" ]; then
 		change "install $ETC/core/zone-sync.env" write_root "$ETC/core/zone-sync.env" "$env_want"
 	fi
