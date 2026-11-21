@@ -4,13 +4,36 @@ The owner's steps to bring up one core node (DNS, time and the zone) on a VM, in
 
 ## 1. Make the VM from the golden image
 
-Make the VM from the golden image as [REF-golden-image.md](REF-golden-image.md) describes. Give it a fixed address on the LAN (the one you will put in `CORE_BIND`). Nothing else on the VM is set by hand.
+Make the VM from the golden image as [REF-golden-image.md](REF-golden-image.md) describes. Name it and give it its fixed address on the LAN (the one you will put in `CORE_BIND`) with `hostbook`, as the zone repository's README describes, not with `post-clone-server.sh`. Nothing else on the VM is set by hand.
 
 ## 2. Get the repo onto the VM
 
-Follow step 1 of [RUNBOOK-host.md](RUNBOOK-host.md): the stacks repo comes over as a bundle, and you clone it into a `stacks` folder in your home. The VM holds no key of yours.
+The VM clones the stacks repo from the NAS share, as step 1 of [RUNBOOK-host.md](RUNBOOK-host.md) does: `git clone -b main /nas/projects/andrusone/stacks ~/stacks`. No bundle, no `scp`, and no key of yours on the VM.
 
-## 3. Run the setup
+## 3. Before the setup: a public resolver on the VM
+
+The setup needs names (apt, Docker and mise fetch from the internet), and the LAN resolvers may be down while you build the node. So set the VM's own DNS to a public resolver such as `1.1.1.1` first, by hand, in netplan. Find the interface with `ip -o route show default` (the name after `dev`). Then, in the file under `/etc/netplan/` that holds it, add under that interface:
+
+```
+nameservers:
+  addresses: [1.1.1.1]
+```
+
+The entry looks like this, with your interface's name in place of `<interface>`; keep the indentation:
+
+```
+network:
+  ethernets:
+    <interface>:
+      nameservers:
+        addresses: [1.1.1.1]
+```
+
+Then run `sudo netplan apply` on the VM.
+
+The setup does not change the VM's resolver. Reading `compose/core-vm/setup.sh`, `host.sh` and `setup-stages.sh`, its stages are preflight, `host.sh` (chrony, ufw and Docker's ports), the zone-sync units, a first zone sync and `core-up`. None of them writes netplan or `resolv.conf`. So after the setup the VM keeps the resolver you gave it, and you set it again by hand if you want it to ask its own DNS.
+
+## 4. Run the setup
 
 On the VM, in the `stacks` folder:
 
@@ -48,17 +71,42 @@ It ends with `changes: n`. Run it again and it ends with `changes: 0`.
 
 To see the steps without changing anything, run `./compose/core-vm/setup.sh --dry-run`. It asks nothing and writes nothing; values come from the environment or the defaults.
 
-## 4. Prove it from another machine on the LAN
+## 5. Prove the node before changing DHCP
 
-From another machine on `CORE_LAN` (not the VM):
+From another machine on `CORE_LAN` (not the VM), in a stacks checkout, with `dig` and `nc` installed:
 
 ```
-mise run core-lan-prove -- <CORE_BIND>     # mise, in a stacks checkout: a DNS answer for the fixture host, a DNSSEC failure, a time query, and the closed ports probed
+mise run core-lan-prove -- <CORE_BIND>     # mise, on the client: one ok or FAIL line per check; exit 0 only if every check is ok
 ```
 
-`CORE_PROVE_HOST` names the host it looks up (default `nas.core.andrusonline.com`); set it to any name in your zone.
+Read the lines this way:
 
-Run it from a LAN client, not from the VM: the point is that a client on the LAN gets the answers and a client off it does not.
+- `ok dns: nas.core.andrusonline.com via <CORE_BIND> is ...`: the node answers a name in the zone. `CORE_PROVE_HOST` names another host, default `nas.core.andrusonline.com`.
+- `ok dns: example.com via <CORE_BIND> is ...`: the node also resolves a name outside the zone.
+- `ok dnssec: dnssec-failed.org ... is SERVFAIL`: the node validates DNSSEC and refuses a broken signature.
+- `ok time: offset ...s`: the node answers time on 123. The client needs `ntpdate` for this; without it the line reads `skip time`, which is not a failure.
+- `ok closed: <CORE_BIND>:<port> refuses`, five lines (5300, 5353, 12300, 22222, 8080): the ports that must stay closed to the LAN.
+
+A `FAIL` line names the check. Fix it on the node and run the proof again. Run it from a LAN client, not from the VM: the point is that a client on the LAN gets the answers and a client off it does not.
+
+Prove each new node this way before you change anything on the network.
+
+## 6. Cutover (the owner's steps)
+
+The two current nodes are the household DNS: `vpnx1` (`10.10.20.21`, `ns1`) and `vpnx2` (`10.10.20.24`, `ns2`). Omada hands clients their resolvers by DHCP. Do the steps in this order:
+
+1. Build the new nodes at new addresses: steps 1 to 4 on each, named and addressed with `hostbook`.
+2. Prove each one with step 5. Do not go on until both pass.
+3. Change the DHCP DNS servers in Omada to the new nodes' addresses.
+4. In the zone (`hostbook` makes the change and raises the serial), point the records that name the old nodes at the new addresses: `ns1` and `ns2`, and the `dns`, `ntp` and `chrony` records, which also list the old nodes.
+5. Retire `vpnx1` and `vpnx2` once clients use the new nodes. A pushed zone reaches the DNS nodes within 10 minutes.
+
+The zone has records the new stack does not provide. Keep or drop each one yourself; the story does not delete them:
+
+- `home` (`10.10.20.26`): the Homepage VIP, held by keepalived on `vpnx1` (primary) or `vpnx2` (backup) according to the zone file.
+- `homepage`: the alias for `home`.
+
+Find them in the `zone` repository's `db.core.andrusonline.com`, under "VIRTUAL / NETWORK SERVICE ALIASES".
 
 ## If it stops
 
