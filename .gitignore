@@ -6,3 +6,4 @@ compose/runner/data/
 compose/monitor/.env
 compose/forge-vm/.env
 compose/runner-vm/.env
+compose/core/bind/named.generated.conf

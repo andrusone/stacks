@@ -19,5 +19,8 @@ for f in "${files[@]}"; do
   if [ -f "$dir/check.sh" ]; then
     bash "$dir/check.sh"
   fi
+  if [ -f "$dir/zone.sh" ]; then
+    bash "$dir/zone.sh"
+  fi
   docker compose -f "$f" up -d --wait
 done
