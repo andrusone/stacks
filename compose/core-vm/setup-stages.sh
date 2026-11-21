@@ -118,10 +118,10 @@ preflight() {
 	command -v mise >/dev/null 2>&1 || stop "mise is missing: install it first (docs/RUNBOOK-host.md)"
 }
 
-# host.sh with the node's LAN and admin values. It checks first itself; its "changes: n" is added here.
+# host.sh with the node's LAN, admin and peer values. It checks first itself; its "changes: n" is added here.
 run_host() {
 	local host="$REPO_DIR/compose/core-vm/host.sh" out n
-	local -a cmd=(env "CORE_LAN=${VAL[CORE_LAN]}" "CORE_ADMIN=${VAL[CORE_ADMIN]}" "$host")
+	local -a cmd=(env "CORE_LAN=${VAL[CORE_LAN]}" "CORE_ADMIN=${VAL[CORE_ADMIN]}" "CORE_PEER=${VAL[CORE_PEER]}" "$host")
 	step "host.sh: chrony, ufw and DOCKER-USER"
 	if [ "$MODE" = dry ]; then cmd+=(--dry-run); else cmd=(sudo "${cmd[@]}"); fi
 	out="$(mktemp)"
@@ -181,15 +181,25 @@ first_zone_sync() {
 	fi
 }
 
-start_core() { (cd "$REPO_DIR" && CORE_ROLE="${VAL[CORE_ROLE]}" mise run core-up); }
+# The values mise run core-up gets: this VM's address and LAN, the node's ports (BIND on 5300, where the
+# peer reaches it; Unbound answers the LAN on 53; chrony on 123), the role and the peer.
+core_values() {
+	echo "CORE_LISTEN=${VAL[CORE_BIND]} CORE_LAN=${VAL[CORE_LAN]} CORE_DNS_PORT=53 CORE_NTP_PORT=123 CORE_BIND_PORT=5300 CORE_ROLE=${VAL[CORE_ROLE]} CORE_PEER=${VAL[CORE_PEER]}"
+}
 
-# mise run core-up with the core stack's defaults (CORE_BIND_PORT 5300 and the rest): the VM's ports are the runbook's concern.
+start_core() {
+	local -a vars
+	read -ra vars <<< "$(core_values)"
+	(cd "$REPO_DIR" && env "${vars[@]}" mise run core-up)
+}
+
+# mise run core-up with core_values.
 core_up() {
 	local running name
 	running="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
 	for name in "${CORE_CONTAINERS[@]}"; do
 		if ! grep -qx "$name" <<< "$running"; then
-			change "mise run core-up (CORE_ROLE=${VAL[CORE_ROLE]})" start_core
+			change "mise run core-up ($(core_values))" start_core
 			return 0
 		fi
 	done

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Test for compose/core-vm/host.sh (ST214, CORE-FR-05 MVP 2). Runs the script with stubbed
 # dpkg-query, apt-get, ufw and systemctl on PATH, and a temporary CORE_ROOT for the files.
-# Checks the dry run, the first run, the idempotent rerun, a changed CORE_LAN, and the exits 2.
+# Checks the dry run, the first run, the idempotent rerun, a changed CORE_LAN, a CORE_PEER (ST223), and the exits 2.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,12 +70,13 @@ run_host() {
   shift
   set +e
   out=$(env PATH="$stub:/usr/bin:/bin" CORE_ROOT="$root" CORE_LAN="$lan" CORE_ADMIN=192.168.1.10 \
-    STUB_STATE="$state" STUB_LOG="$log" bash "$host" "$@" 2>&1)
+    CORE_PEER="$peer" STUB_STATE="$state" STUB_LOG="$log" bash "$host" "$@" 2>&1)
   code=$?
   set -e
 }
 mutations() { wc -l < "$log"; }
 lan=192.168.1.0/24
+peer=
 
 # 1. Dry run prints the commands and changes nothing
 run_host "$lan" --dry-run
@@ -121,7 +122,27 @@ check "changed LAN rewrites the block" grep -qxF -- "-A DOCKER-USER -s 10.9.0.0/
 check "changed LAN leaves no old LAN in the block" [ "$(grep -c -- "-s $lan" "$root/etc/ufw/after.rules")" -eq 0 ]
 check "changed LAN reloads ufw" grep -qx 'ufw reload' "$log"
 
-# 5. Missing values and no apt exit 2
+# 5. CORE_PEER opens BIND's 5300 to that peer only, on ufw and in DOCKER-USER; a rerun changes nothing
+peer=10.9.0.60
+run_host "$lan"
+check "peer run exits 0" [ "$code" -eq 0 ]
+check "ufw allows 5300/tcp from the peer" grep -qxF "ufw allow from 10.9.0.60 to any port 5300 proto tcp" "$log"
+check "ufw allows 5300/udp from the peer" grep -qxF "ufw allow from 10.9.0.60 to any port 5300 proto udp" "$log"
+check "no other 5300 allow was added" [ "$(grep -c 'port 5300' "$log")" -eq 2 ]
+check "DOCKER-USER accepts 5300/tcp from the peer" grep -qxF -- "-A DOCKER-USER -s 10.9.0.60 -p tcp --dport 5300 -j RETURN" "$root/etc/ufw/after.rules"
+check "DOCKER-USER accepts 5300/udp from the peer" grep -qxF -- "-A DOCKER-USER -s 10.9.0.60 -p udp --dport 5300 -j RETURN" "$root/etc/ufw/after.rules"
+check "DOCKER-USER drops 5300 from everyone else" grep -qxF -- "-A DOCKER-USER -p udp --dport 5300 -j DROP" "$root/etc/ufw/after.rules"
+before=$(mutations)
+run_host "$lan"
+check "peer rerun ends with changes: 0" grep -qx 'changes: 0' <<<"$out"
+check "peer rerun ran no mutating command" [ "$(mutations)" -eq "$before" ]
+peer=10.9.0.0/24
+run_host "$lan"
+check "a peer CIDR exits 2" [ "$code" -eq 2 ]
+check "a peer CIDR is named" grep -qF "CORE_PEER '10.9.0.0/24' is not an IPv4 address" <<<"$out"
+peer=
+
+# 6. Missing values and no apt exit 2
 set +e
 out=$(env -u CORE_LAN PATH="$stub:/usr/bin:/bin" CORE_ROOT="$root" CORE_ADMIN=192.168.1.10 bash "$host" 2>&1)
 code=$?

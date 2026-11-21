@@ -3,8 +3,8 @@
 #   lan-prove.sh <core-ip> [--closed <port>...]
 # Prints one `ok` or `FAIL` line per check and exits 1 if any fails. A missing tool fails
 # alone. The time check is skipped, not failed, when ntpdate is not installed.
-# Checks: a name resolves through <core-ip>; example.com resolves; dnssec-failed.org is
-# SERVFAIL; the time offset; each --closed port refuses a TCP connection.
+# Checks: a name resolves through <core-ip> on 53; example.com resolves; dnssec-failed.org is
+# SERVFAIL; the time offset on 123; each --closed port refuses a TCP connection.
 set -u
 
 usage() {
@@ -16,7 +16,7 @@ usage() {
 case "$1" in -*) usage ;; esac
 ip="$1"
 shift
-closed=(5300 5353 12300 22222)
+closed=(5300 5353 12300 22222 8080)
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--closed) shift; closed=("$@"); break ;;
@@ -38,6 +38,8 @@ if [ "${#missing[@]}" -gt 0 ]; then
 	exit 1
 fi
 
+# DNS asks <core-ip> on port 53 and the time on port 123, the defaults: a LAN client never uses the node's
+# high ports (BIND on 5300 is the peer's; Unbound is on 5353), so those are probed closed, not used.
 resolves() {
 	local line got=""
 	while IFS= read -r line; do
