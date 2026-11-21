@@ -98,7 +98,7 @@ DOCKER_KEY=/etc/apt/keyrings/docker.asc
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 DOCKER_SOURCES=/etc/apt/sources.list.d/docker.sources
 IMAGE_PACKAGES=(git curl ca-certificates gnupg cifs-utils ufw openssh-server sudo)
-ENV_KEYS=(FORGE_USER FORGE_UID FORGE_GID FORGE_BIND FORGE_PORT FORGE_URL FORGE_DATA FORGE_ADMIN_USER FORGE_ADMIN_EMAIL FORGE_ADMIN_PASSWORD)
+ENV_KEYS=(FORGE_USER FORGE_UID FORGE_GID FORGE_BIND FORGE_PORT FORGE_HOST FORGE_URL FORGE_DATA FORGE_ADMIN_USER FORGE_ADMIN_EMAIL FORGE_ADMIN_PASSWORD)
 SYSTEMD_RUN_DIR=/run/systemd/system
 
 # ENV_VAL holds the values in use, STORED the ones in the file. set_globals copies ENV_VAL to the FORGE_*
@@ -207,9 +207,10 @@ default_for() {
 				echo "$src"
 			fi
 			;;
+		FORGE_HOST) echo forge.core.andrusonline.com ;;
 		FORGE_URL)
-			if [ -n "${ENV_VAL[FORGE_BIND]:-}" ]; then
-				echo "http://${ENV_VAL[FORGE_BIND]}:${ENV_VAL[FORGE_PORT]:-}/"
+			if [ -n "${ENV_VAL[FORGE_HOST]:-}" ]; then
+				echo "http://${ENV_VAL[FORGE_HOST]}:${ENV_VAL[FORGE_PORT]:-}/"
 			fi
 			;;
 		FORGE_USER) echo forge ;;
@@ -221,18 +222,21 @@ default_for() {
 	esac
 }
 
-# A value is one word with no spaces; the ids and port are digits; the admin email has one @.
+# A value is one word with no spaces; the ids and port are digits; the admin email has one @; the host
+# is letters, digits, dots and hyphens (FG-FR-15, ST217).
 valid_answer() {
 	case "$1" in
 		*_PORT | *_UID | *_GID) [[ $2 =~ ^[0-9]+$ ]] ;;
 		FORGE_ADMIN_EMAIL) [[ $2 =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]] ;;
+		FORGE_HOST) [[ $2 =~ ^[A-Za-z0-9.-]+$ ]] ;;
 		*) [[ $2 =~ ^[^[:space:]]+$ ]] ;;
 	esac
 }
 
 # Settles one value into ENV_VAL. An environment variable of the same name wins, with no prompt.
 # Otherwise asks, with the stored or default value as the default; no answer (or no terminal) takes
-# it. The password's prompt says hidden and typing is not echoed.
+# it. The password's prompt says hidden and typing is not echoed. At a terminal an invalid answer is
+# asked again; otherwise it stops below.
 settle() {
 	local name=$1 def answer=""
 	if [ -n "${!name:-}" ]; then
@@ -240,25 +244,32 @@ settle() {
 	elif [ "$KEEP_STORED" -eq 0 ]; then
 		def="${ENV_VAL[$name]:-}"
 		if [ -z "$def" ]; then def="$(default_for "$name")"; fi
-		if [ "$MODE" = run ] && [ "$ASSUME_YES" -eq 0 ]; then
-			if [ "$name" = FORGE_ADMIN_PASSWORD ]; then
-				printf '%s [hidden]: ' "$name" >&2
-				read -rs answer || true
-				echo >&2
-			else
-				printf '%s [%s]: ' "$name" "${def:-no default}" >&2
-				read -r answer || true
-				[ -t 0 ] || echo >&2
+		while :; do
+			answer=""
+			if [ "$MODE" = run ] && [ "$ASSUME_YES" -eq 0 ]; then
+				if [ "$name" = FORGE_ADMIN_PASSWORD ]; then
+					printf '%s [hidden]: ' "$name" >&2
+					read -rs answer || true
+					echo >&2
+				else
+					printf '%s [%s]: ' "$name" "${def:-no default}" >&2
+					read -r answer || true
+					[ -t 0 ] || echo >&2
+				fi
 			fi
-		fi
-		if [ -z "$answer" ]; then answer="$def"; fi
-		if [ -z "$answer" ]; then
-			stop_or_note "$name has no default here: set it in the environment or in $ENV_FILE" || return 1
-		fi
+			if [ -z "$answer" ]; then answer="$def"; fi
+			if [ -z "$answer" ]; then
+				stop_or_note "$name has no default here: set it in the environment or in $ENV_FILE" || return 1
+			fi
+			if valid_answer "$name" "$answer" || [ "$MODE" != run ] || [ "$ASSUME_YES" -eq 1 ] || [ ! -t 0 ]; then
+				break
+			fi
+			echo "$name: not valid (see the rule in setup.sh); asking again" >&2
+		done
 		ENV_VAL[$name]="$answer"
 	fi
 	if ! valid_answer "$name" "${ENV_VAL[$name]}"; then
-		stop_or_note "$name: use one word with no spaces (the email has one @; the ids and port are digits)" || return 1
+		stop_or_note "$name: use one word with no spaces (the email has one @; the ids and port are digits; the host is letters, digits, dots and hyphens)" || return 1
 	fi
 }
 
@@ -279,11 +290,15 @@ env_values_ok() {
 
 # The env file's text: the template with the settled values filled in, comments kept.
 render_env() {
-	local line key
+	local line key name
 	while IFS= read -r line || [ -n "$line" ]; do
 		key="${line%%=*}"
 		if [[ $line == *=* && $key =~ ^[A-Z_]+$ ]]; then echo "$key=${ENV_VAL[$key]}"; else echo "$line"; fi
 	done < "$ENV_EXAMPLE"
+	# A key the template does not have yet is still written, so a rerun finds every value and asks nothing.
+	for name in "${ENV_KEYS[@]}"; do
+		grep -q "^$name=" "$ENV_EXAMPLE" || echo "$name=${ENV_VAL[$name]}"
+	done
 }
 
 # Settles the values in memory, before the preflight. When the env file already holds a valid value for
