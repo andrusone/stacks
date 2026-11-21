@@ -140,7 +140,7 @@ The setup script's last lines print the forge URL marked "once started", then as
 sudo docker compose -f compose/forge-vm/docker-compose.yml up -d      # docker compose, on the forge VM: starts the forge (the same command the setup script offers)
 ```
 
-**What you should see:** open `FORGE_URL` in a browser (for example `http://192.168.1.60:3000`) once the forge is started. The forge's page answers. Log in as `FORGE_ADMIN_USER` with `FORGE_ADMIN_PASSWORD`. The setup script's last line is `changes: <n>`; a run that had nothing left to change, and did not start the forge, ends with `changes: 0`. The first run also writes `health/forge.toml`: commit it to the repo, then open the monitor page and confirm the forge shows (its three answers, `forge: host` and the rest).
+**What you should see:** open `FORGE_URL` in a browser (for example `http://192.168.1.60:3000`) once the forge is started. The forge's page answers. Log in as `FORGE_ADMIN_USER` with `FORGE_ADMIN_PASSWORD`. The setup script's last line is `changes: <n>`; a run that had nothing left to change, and did not start the forge, ends with `changes: 0`. The first run also checks that `health/forge.toml` is in git; if not, it prints the `go run ./cmd/health new forge <address> --commit` command: run it on your own machine, push, rerun, then open the monitor page and confirm the forge shows (its three answers, `forge: host` and the rest).
 
 ### 4d. Updating the repo later
 
@@ -229,7 +229,7 @@ The setup script's last lines name the runner and ask `Start the runner now? [Y/
 sudo docker compose -f compose/runner-vm/docker-compose.yml up -d      # docker compose, on the runner VM: starts the runner (the same command the setup script offers)
 ```
 
-**What you should see:** once the runner is started, on the forge's page, under **Settings**, **Actions**, **Runners**, the runner named `RUNNER_NAME` shows as online. The first run also writes `health/runner.toml`: commit it to the repo, then open the monitor page and confirm the runner shows (its four answers, `runner: host` and the rest).
+**What you should see:** once the runner is started, on the forge's page, under **Settings**, **Actions**, **Runners**, the runner named `RUNNER_NAME` shows as online. The first run also checks that `health/runner.toml` is in git; if not, it prints the `go run ./cmd/health new runner <address> --commit` command: run it on your own machine, push, rerun, then open the monitor page and confirm the runner shows (its four answers, `runner: host` and the rest).
 
 ## 7. Test: a green check and a red one
 
