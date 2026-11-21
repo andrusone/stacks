@@ -5,6 +5,32 @@
 # monitor's group, and the monitor folders become group-writable with setgid (config.yaml, the marker).
 HEALTH_SYNC_UNITS="${HEALTH_SYNC_UNITS:-/etc/systemd/system}"
 HS_SRC="$REPO_DIR/compose/monitor"
+# The deploy key the pull uses (ST261, made by git-access --role prod) and the SSH address of the repo.
+HS_KEY="${HS_KEY:-$HOME/.ssh/id_ed25519_github}"
+HS_ORIGIN_SSH=git@github.com:andrusone/stacks.git
+
+# True when origin is a path or file:// (the NAS clone). An SSH, https or no origin is not local.
+hs_origin_is_local() {
+	local url
+	url="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null)" || return 1
+	case "$url" in
+	file://*) return 0 ;;
+	git@* | *://*) return 1 ;;
+	esac
+	return 0
+}
+
+# A local origin becomes the SSH address once the key exists; without the key it is left alone and says how to get one.
+hs_origin() {
+	local url
+	hs_origin_is_local || return 0
+	url="$(git -C "$REPO_DIR" remote get-url origin)"
+	if [ ! -f "$HS_KEY" ]; then
+		echo "health-sync origin: $url is a local path and there is no deploy key at $HS_KEY, so origin is left alone; run git-access --role prod --deploy-repo andrusone/stacks, then rerun"
+		return 0
+	fi
+	change "health-sync origin: $url -> $HS_ORIGIN_SSH (the deploy key is there)" git -C "$REPO_DIR" remote set-url origin "$HS_ORIGIN_SSH"
+}
 
 # The unit text to install: ExecStart and User= filled in for this checkout.
 hs_unit_text() {
@@ -70,6 +96,7 @@ hs_units() {
 
 # Without systemd nothing changes and the command is printed. The group grants apply at the next start.
 hs_run() {
+	hs_origin
 	if ! systemd_present; then
 		echo "health-sync timer: no systemd here, so it is not installed or enabled. On a systemd host ./setup.sh does both; by hand: sudo systemctl enable --now health-sync.timer"
 		return 0
