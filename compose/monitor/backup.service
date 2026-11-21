@@ -1,0 +1,8 @@
+# HL-FR-14 (ST260): runs backup.sh once; backup.timer starts it. The script path is where the monitor VM's
+# checkout of stacks is; installing the unit is the installer's job (health-sync-install.sh), not this file's.
+[Unit]
+Description=Back up the monitor's non-secret state to the NAS
+
+[Service]
+Type=oneshot
+ExecStart=/opt/stacks/compose/monitor/backup.sh

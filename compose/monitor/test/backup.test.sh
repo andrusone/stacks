@@ -4,8 +4,8 @@
 # fixture NAS folder. A date stub counts up so quick runs get distinct names.
 # Checks: one archive made with no temp file left; eight runs leave seven, the newest kept; a missing
 # backup folder fails with its message; a backup folder inside the state folder is refused; the archive
-# lists only gatus/history and beszel, holds neither the ntfy folder nor .env, holds no topic value, and
-# restores the history file byte-for-byte; with nothing to back up, a valid empty archive is written and
+# lists only gatus/history and beszel, holds neither the ntfy folder nor .env, holds no topic value, holds
+# no Beszel private key (ST260), and restores the history file byte-for-byte; with nothing to back up, a valid empty archive is written and
 # the run says so on stderr.
 set -euo pipefail
 
@@ -39,6 +39,8 @@ printf 'cache-bytes-%s' "$topic" > "$mon/ntfy/cache.db"
 printf 'NTFY_TOPIC=%s\n' "$topic" > "$mon/.env"
 printf 'history-bytes-42' > "$mon/gatus/history/history.json"
 printf 'beszel-bytes-43' > "$mon/beszel/data.db"
+printf 'private-key-bytes' > "$mon/beszel/id_ed25519"
+printf 'public-key-bytes' > "$mon/beszel/id_ed25519.pub"
 
 run() {
 	MONITOR_DIR="$mon" MONITOR_BACKUP="$nas" NTFY_TOPIC="$topic" bash "$script"
@@ -65,6 +67,7 @@ want="$(printf 'beszel/\nbeszel/data.db\ngatus/history/\ngatus/history/history.j
 plain="$tmp/plain.tar"
 gunzip -c "$newest" > "$plain"
 grep -q -- "$topic" "$plain" && fail "the archive holds the topic value"
+grep -q 'private-key-bytes' "$plain" && fail "the archive holds the Beszel hub's private key"
 restore="$tmp/restore"
 mkdir "$restore"
 tar -xf "$plain" -C "$restore"

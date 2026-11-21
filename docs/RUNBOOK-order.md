@@ -18,7 +18,7 @@ On the monitor page: no VM comes up in this step, so nothing new shows.
 
 ## 2. The monitor
 
-It needs nothing, not even DNS. Its steps, including the six values in `compose/monitor/.env`, are in [RUNBOOK-monitor.md](RUNBOOK-monitor.md).
+It needs nothing, not even DNS. Its steps, including the six values in `compose/monitor/.env`, are in [RUNBOOK-monitor.md](RUNBOOK-monitor.md). Its state backup runs nightly once the NAS folder exists ([RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 4c).
 
 On the monitor page: open `http://<MONITOR_BIND>:<GATUS_PORT>`. Within 2 minutes it lists the `starter` target with host, service and right answer up. Each later stack shows here once it has a health file.
 
