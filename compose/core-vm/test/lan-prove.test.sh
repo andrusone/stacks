@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The lan-prove test (ST215, CORE-FR-10 MVP 2): stubs of dig, nc and ntpdate on PATH in a temp folder.
 # Each run clears the environment, so only PATH and the STUB_ values reach the script.
-# Checks: all pass; one failed name; an open closed-port; a missing dig; no ntpdate means a skip.
+# Checks: all pass; one failed name; an open closed-port; a missing dig; no ntpdate means a skip;
+# the DNS and time calls use the default ports 53 and 123 (ST223).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -15,6 +16,7 @@ mkdir -p "$tmp/bin"
 cat > "$tmp/bin/dig" <<'STUB'
 #!/usr/bin/env bash
 # Test stub for dig (ST215): answers only when the script asks the core node (@$STUB_CORE_IP).
+[ -n "${STUB_LOG:-}" ] && echo "dig $*" >> "$STUB_LOG"
 server=""; name=""
 for a; do case "$a" in @*) server="${a#@}" ;; +*|A) ;; *) name="$a" ;; esac; done
 [ "$server" = "$STUB_CORE_IP" ] || exit 0
@@ -34,6 +36,7 @@ STUB
 cat > "$tmp/bin/ntpdate" <<'STUB'
 #!/usr/bin/env bash
 # Test stub for ntpdate (ST215): `ntpdate -q IP` prints a fixed offset.
+[ -n "${STUB_LOG:-}" ] && echo "ntpdate $*" >> "$STUB_LOG"
 echo "server $2, stratum 2, offset 0.000312, delay 0.02345"
 STUB
 chmod +x "$tmp/bin/"*
@@ -52,16 +55,16 @@ run() {
 	local path="$1"
 	shift
 	rc=0
-	out="$(env -i STUB_CORE_IP="$core" STUB_FAIL="${STUB_FAIL:-}" STUB_OPEN="${STUB_OPEN:-}" \
+	out="$(env -i STUB_CORE_IP="$core" STUB_FAIL="${STUB_FAIL:-}" STUB_OPEN="${STUB_OPEN:-}" STUB_LOG="${STUB_LOG:-}" \
 		PATH="$path" "$bash_bin" "$script" "$@" 2>&1)" || rc=$?
 }
 
 count() { grep -c "^$1" <<<"$out" || true; }
 
-# 1. Everything passes: one ok per check (name, example.com, dnssec, time, four closed ports), exit 0.
+# 1. Everything passes: one ok per check (name, example.com, dnssec, time, five closed ports), exit 0.
 run "$tmp/bin" "$core"
 [ "$rc" -eq 0 ] || fail "all pass exited $rc: $out"
-[ "$(count ok)" -eq 8 ] || fail "all pass: want 8 ok lines: $out"
+[ "$(count ok)" -eq 9 ] || fail "all pass: want 9 ok lines: $out"
 [ "$(count FAIL)" -eq 0 ] || fail "all pass: unexpected FAIL: $out"
 
 # 2. One failed name: exit 1 and exactly one FAIL, for example.com.
@@ -87,4 +90,15 @@ run "$tmp/nontp" "$core"
 grep -qx 'skip time: no ntpdate on this client' <<<"$out" || fail "no ntpdate: no skip line: $out"
 [ "$(count FAIL)" -eq 0 ] || fail "no ntpdate: unexpected FAIL: $out"
 
-echo "ok lan-prove test: 5 cases"
+# 6. The default closed ports include 5300, and the DNS and time calls ask <core-ip> on the default ports.
+calls="$tmp/calls"
+: > "$calls"
+STUB_LOG="$calls" run "$tmp/bin" "$core"
+[ "$rc" -eq 0 ] || fail "default ports exited $rc: $out"
+grep -q '^ok closed: 192.0.2.20:5300 refuses' <<<"$out" || fail "5300 is not probed closed by default: $out"
+grep -q '^ok closed: 192.0.2.20:8080 refuses' <<<"$out" || fail "8080 is not probed closed by default: $out"
+grep -q '^dig .*@192.0.2.20 ' "$calls" || fail "dig did not ask $core: $(cat "$calls")"
+grep -qE '^dig .*(\+port|-p )' "$calls" && fail "dig was given a port: $(cat "$calls")"
+grep -qx "ntpdate -q $core" "$calls" || fail "ntpdate was not asked on the default port: $(cat "$calls")"
+
+echo "ok lan-prove test: 6 cases"

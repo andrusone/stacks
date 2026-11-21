@@ -24,7 +24,7 @@ cp "$src/setup.sh" "$src/setup-stages.sh" "$src/.env.example" "$src/zone-sync.se
 # The stub host.sh: records its call; the first real run reports a change, a rerun reports none.
 cat > "$cvm/host.sh" <<'EOF'
 #!/usr/bin/env bash
-echo "host.sh args=[$*] LAN=$CORE_LAN ADMIN=$CORE_ADMIN" >> "$STUB_LOG"
+echo "host.sh args=[$*] LAN=$CORE_LAN ADMIN=$CORE_ADMIN PEER=$CORE_PEER" >> "$STUB_LOG"
 if [ -e "$STUB_STATE/host-done" ]; then echo "changes: 0"; exit 0; fi
 echo "changes: 1"
 if [ "$*" != --dry-run ]; then touch "$STUB_STATE/host-done"; fi
@@ -60,7 +60,7 @@ esac
 EOF
 cat > "$stub/mise" <<'EOF'
 #!/usr/bin/env bash
-echo "mise $* CORE_ROLE=$CORE_ROLE" >> "$STUB_LOG"
+echo "mise $* CORE_LISTEN=$CORE_LISTEN CORE_LAN=$CORE_LAN CORE_DNS_PORT=$CORE_DNS_PORT CORE_NTP_PORT=$CORE_NTP_PORT CORE_BIND_PORT=$CORE_BIND_PORT CORE_ROLE=$CORE_ROLE CORE_PEER=$CORE_PEER" >> "$STUB_LOG"
 if [ "$1 $2" = "run core-up" ]; then printf '%s\n' core-bind core-unbound core-chrony > "$STUB_STATE/running"; fi
 EOF
 cat > "$stub/docker" <<'EOF'
@@ -132,6 +132,7 @@ check "dry run prints the unit install" grep -qF 'install' <<<"$out"
 check "dry run ends with changes" grep -qE '^changes: [1-9][0-9]*$' <<<"$out"
 tree > "$tmp/after"
 check "dry run changes no file" cmp -s "$tmp/before" "$tmp/after"
+check "dry run shows core-up with the five address and port values" grep -qF 'mise run core-up (CORE_LISTEN=192.168.1.50 CORE_LAN=192.168.1.0/24 CORE_DNS_PORT=53 CORE_NTP_PORT=123 CORE_BIND_PORT=5300 CORE_ROLE=primary CORE_PEER=)' <<<"$out"
 check "dry run runs no install, systemctl or mise" [ "$(mutations)" -eq 0 ]
 check "dry run calls host.sh in dry-run only" [ -z "$(grep -F 'host.sh args=[] ' "$log" || true)" ]
 
@@ -143,12 +144,12 @@ check "first run ends with changes" grep -qE '^changes: [1-9][0-9]*$' <<<"$out"
 check ".env holds the values" grep -qx 'CORE_ZONE_URL=http://192.168.1.20/zone.git' "$cvm/.env"
 check ".env is mode 600" [ "$(stat -c %a "$cvm/.env")" = 600 ]
 check ".env has a comment per value" grep -q '^# CORE_ZONE_URL:' "$cvm/.env"
-check "host.sh got the LAN and admin values" grep -qF 'host.sh args=[] LAN=192.168.1.0/24 ADMIN=192.168.1.10' "$log"
+check "host.sh got the LAN and admin values" grep -qF 'host.sh args=[] LAN=192.168.1.0/24 ADMIN=192.168.1.10 PEER=' "$log"
 check "zone-sync unit runs this checkout's script" grep -qx "ExecStart=$cvm/zone-sync.sh" "$root/etc/systemd/system/zone-sync.service"
 check "zone-sync env has the zone values" grep -qx "CORE_ZONE_OUT=$repo/compose/core/bind/zone" "$root/etc/core/zone-sync.env"
 check "timer is enabled and started" [ -e "$state/timer-enabled" ] && [ -e "$state/timer-active" ]
 check "first zone sync wrote BIND's copy" [ -f "$zone_copy" ]
-check "core-up ran with the role" grep -qxF 'mise run core-up CORE_ROLE=primary' "$log"
+check "core-up ran with the node's values and ports" grep -qxF 'mise run core-up CORE_LISTEN=192.168.1.50 CORE_LAN=192.168.1.0/24 CORE_DNS_PORT=53 CORE_NTP_PORT=123 CORE_BIND_PORT=5300 CORE_ROLE=primary CORE_PEER=' "$log"
 check "stage order: host.sh first" before_in_log 'host.sh args=' 'systemctl daemon-reload'
 check "stage order: units before the timer" before_in_log 'systemctl daemon-reload' 'systemctl enable --now zone-sync.timer'
 check "stage order: timer before the first sync" before_in_log 'systemctl enable --now zone-sync.timer' 'systemctl start zone-sync.service'
@@ -180,6 +181,18 @@ check "a missing zone URL is named" grep -qF 'CORE_ZONE_URL has no default' <<<"
 check "a missing zone URL writes no .env" [ ! -e "$cvm/.env" ]
 run_setup CORE_ZONE_URL= -- --dry-run
 check "a missing zone URL in --dry-run says what would stop" grep -qF 'a real run would stop: CORE_ZONE_URL' <<<"$out"
+
+# 6. A peer: host.sh and core-up get it; a peer that is not an address exits 2 before anything runs
+reset_state
+run_setup CORE_PEER=192.168.1.60 -- --yes
+check "peer run exits 0" [ "$code" -eq 0 ]
+check "host.sh got the peer" grep -qF 'host.sh args=[] LAN=192.168.1.0/24 ADMIN=192.168.1.10 PEER=192.168.1.60' "$log"
+check "core-up got the peer" grep -qxF 'mise run core-up CORE_LISTEN=192.168.1.50 CORE_LAN=192.168.1.0/24 CORE_DNS_PORT=53 CORE_NTP_PORT=123 CORE_BIND_PORT=5300 CORE_ROLE=primary CORE_PEER=192.168.1.60' "$log"
+reset_state
+run_setup CORE_PEER=192.168.1.0/24 -- --yes
+check "a peer CIDR exits 2" [ "$code" -eq 2 ]
+check "a peer CIDR is named" grep -qF 'CORE_PEER' <<<"$out"
+check "a refused peer runs nothing" [ ! -s "$log" ]
 
 echo "setup.test: $pass passed, $fails failed"
 [ "$fails" -eq 0 ]

@@ -12,7 +12,8 @@
 # - Writes compose/core-vm/.env (mode 600) only when a value differs. The file is git-ignored.
 # - Then the stages in setup-stages.sh, each checking first: host.sh with the LAN and admin values;
 #   zone-sync.service and zone-sync.timer into /etc/systemd/system and /etc/core/zone-sync.env, the timer
-#   enabled and started; a first zone sync through the service when BIND has no copy; mise run core-up.
+#   enabled and started; a first zone sync through the service when BIND has no copy; mise run core-up
+#   with the node's address and LAN and its ports (BIND 5300, DNS 53, NTP 123), so the peer reaches 5300 only.
 # - Ends "changes: n", the sum of every stage's changes. A second run ends "changes: 0".
 # - --dry-run prints every step, asks nothing (values from the environment or the defaults) and writes
 #   nothing. The change() wrapper is the only place a machine change happens.

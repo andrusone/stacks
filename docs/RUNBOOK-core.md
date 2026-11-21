@@ -28,6 +28,7 @@ It asks for these, with a default (Enter accepts):
 | `CORE_ZONE_URL` | the zone repository by address, never a name, for example `http://192.168.1.20/zone.git` | none: you give it |
 | `CORE_ROLE` | `primary` or `secondary` | `primary` |
 | `CORE_PEER` | the other node's address; leave empty until it exists | empty |
+| ports (not asked) | DNS on 53 and NTP on 123 open to `CORE_LAN`; BIND on 5300 open to `CORE_PEER` only | fixed |
 
 `CORE_ZONE_URL` is the `zone` repository's address on the owner's Git host until the forge exists. The setup refuses a name there, because the zone must load before DNS does.
 
@@ -36,10 +37,10 @@ The answers go to `compose/core-vm/.env` (git ignores it). A rerun reuses that f
 The setup then runs, each stage checking first:
 
 1. preflight: apt, systemd, Docker and mise. A missing one stops here with a plain message, and nothing is written.
-2. `host.sh`: chrony serves `CORE_LAN` only, ufw is default-deny with DNS and NTP open to `CORE_LAN` and SSH to `CORE_ADMIN`, and Docker's published ports obey the same rule.
+2. `host.sh`: chrony serves `CORE_LAN` only, ufw is default-deny with DNS and NTP open to `CORE_LAN` and SSH to `CORE_ADMIN`, and Docker's published ports obey the same rule. With `CORE_PEER` set, BIND's port 5300 (tcp and udp) is open to that peer and to no one else.
 3. the zone-sync service and timer: copied into `/etc/systemd/system`, and `/etc/core/zone-sync.env` written; the timer is enabled and started (every 5 minutes).
 4. a first zone sync, through the service, when BIND has no copy of the zone yet.
-5. `mise run core-up` with the role. It keeps the stack's default ports (BIND on 5300, Unbound on 5353). Those are the stack's defaults, not this VM's ports; the setup does not change them.
+5. `mise run core-up` with the node's address, LAN, role and peer, and its ports: DNS on 53 (Unbound answers the LAN), NTP on 123, and BIND on 5300, the port the peer reaches.
 
 It ends with `changes: n`. Run it again and it ends with `changes: 0`.
 
