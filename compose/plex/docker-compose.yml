@@ -3,7 +3,7 @@
 #
 # The pins are in .env.example, by tag and digest: PLEX_IMAGE and KOMETA_IMAGE.
 # Changing a pin is the upgrade. KOMETA_IMAGE is the tag matching
-# network:stacks/plex/pins.env (KOMETA_VERSION 2.4.8; the image tag is v2.4.8).
+# network:stacks/plex/pins.txt (KOMETA_VERSION 2.4.8; the image tag is v2.4.8).
 #
 # Data: bind mounts of the folders named in .env.example, relative to this file.
 # Kometa does not start Plex; it runs on its own schedule through its own entrypoint.

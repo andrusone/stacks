@@ -2,7 +2,7 @@
 # Run with compose/up.sh and compose/down.sh, not by hand: up.sh writes
 # compose/gatus/config.yaml (git-ignored) from the health files first.
 #
-# NTFY_TOPIC=oc8-local is a throwaway local topic for this test machine. It is
+# The ntfy topic oc8-local is a throwaway local topic for this test machine. It is
 # not a secret. The real phone topic never goes in git (HL-NFR-02).
 
 services:

@@ -19,7 +19,7 @@ sudo plexcurator validate             # installed wrapper runs the CLI as the se
 ```
 
 The `kometa` phase installs the source archive and requirements file pinned in
-`pins.env`, placing the application in `/opt/kometa/app` and its virtual
+`pins.txt`, placing the application in `/opt/kometa/app` and its virtual
 environment in `/opt/kometa/venv` owned by `kometa:kometa`. It creates `/etc/kometa/config.yml` from
 `config.kometa.example.yml` only when the file is absent; existing config
 contents are never overwritten. Replace the placeholder before the builder

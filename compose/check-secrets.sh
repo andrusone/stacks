@@ -42,7 +42,7 @@ while IFS= read -r hit; do
 	rhs="$(sed -E 's/.*(TOKEN|PASSWORD|SECRET|TOPIC)[A-Za-z0-9_]*=//' <<<"$hit")"
 	read -r tok _ <<<"$rhs" || true
 	tok="${tok#[\"\']}"
-	tok="${tok%[\"\']}"
+	tok="${tok%%[\\\"\']*}"
 	case "$tok" in '' | '$'* | '%'* | '<'* | '`'*) continue ;; esac
 	case "${tok,,}" in placeholder | changeme | change-me | replace-me | example | your-* | xxx*) continue ;; esac
 	fail "$hit: a secret-like value in a tracked file (HL-NFR-02)"
