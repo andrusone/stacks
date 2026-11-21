@@ -1,13 +1,10 @@
 # Runbook: the monitor on a new VM
 
-The steps to run the monitor (HL-FR-19) on a fresh VM. On your own computer you need only ssh and scp (both come with OpenSSH) and the git checkout of this repo you already have. Each command says what tool it uses and where it runs.
+The steps to run the monitor (HL-FR-19) on a fresh VM. On your own computer you need only ssh (it comes with OpenSSH). Each command says what tool it uses and where it runs.
 
 ## 1. Make the VM from the golden image
 
-Clone a new VM from the golden image and finish it with the image's own `post-clone-server.sh`, which sets the hostname and the static address. The image already has ssh, git, ufw and cifs-utils, so you install none of them. See [REF-golden-image.md](REF-golden-image.md) for what the image gives every VM.
-
-- Write down the **fixed address** that `post-clone-server.sh` set: you will need it as `MONITOR_BIND`.
-- The monitor needs no TrueNAS share, so do not mount one for it.
+Clone a new VM from the golden image. The image already has ssh, git, ufw and cifs-utils, so you install none of them, and it mounts the TrueNAS shares itself. See [REF-golden-image.md](REF-golden-image.md) for what the image gives every VM.
 
 Connect from your own computer:
 
@@ -15,28 +12,30 @@ Connect from your own computer:
 ssh youruser@192.168.1.50      # ssh, on your own computer (use your VM's address and user)
 ```
 
+Then name and address the VM:
+
+- Name it and add it to the zone with `hostbook`: run `hostbook` with no arguments (the console asks four questions and offers to add the host), or `hostbook add <name> <address>` if you already have both. See `machine:docs/SPEC-hostbook.md`.
+- Set its hostname and static address on the VM with `machine --profile server --stage-clone`. It asks for the host name, the static IPv4 address with its CIDR, the gateway and the DNS server, writes the new network file to a staging path and prints it with its diff. It applies nothing until you type `apply`. The machine repo documents this route (`machine:docs/SPEC-machine.md`, MC-FR-14) and no by-hand netplan route, so none is given here.
+- Write down the **fixed address** you gave the VM: you will need it as `MONITOR_BIND`.
+
 ## 2. Get the repo onto the VM and answer setup's questions
 
-The repo is private, so the VM cannot clone it and holds no key of yours. Your own computer sends the repo as a bundle: one file that holds the whole repo.
+The VM clones the repo from the NAS share, so it needs no bundle, no `scp` and no key of yours. The share's clone must be on branch `main` (a CIFS share has no executable bit, so run from the VM's own clone, never from the share).
 
-On your own computer, in your local stacks checkout:
-
-```
-git bundle create stacks.bundle main      # git, on your own computer: packs the main branch into one file
-```
+Over the ssh session on the VM:
 
 ```
-scp stacks.bundle youruser@192.168.1.50:      # scp, on your own computer: copies the file to the VM's home folder
-```
-
-Then, over the ssh session on the VM:
-
-```
-git clone -b main stacks.bundle stacks      # git, on the VM: makes the stacks folder from the bundle's main branch (a bundle of main has no HEAD, so name the branch)
+git clone -b main /nas/projects/andrusone/stacks ~/stacks      # git, on the VM: makes the stacks folder from the share's main branch
 ```
 
 ```
-cd stacks      # cd, on the VM
+cd ~/stacks      # cd, on the VM
+```
+
+Then make the NAS folders for the stacks, once. This also makes the monitor's backup folder on the share:
+
+```
+./host/nas-layout.sh      # bash, on the VM, as your normal user: makes the folders for forge, monitor and core on the share and prints one [step] or [change] line per item, then changes: n (a rerun ends changes: 0)
 ```
 
 There is no file to copy or edit. `setup.sh` asks for the six values below, each with a default: press Enter to accept it. It writes your answers to `compose/monitor/.env`.
@@ -70,7 +69,7 @@ The last lines show the two addresses marked "once started". Then `setup.sh` ask
 sudo docker compose -f compose/monitor/docker-compose.yml up -d      # docker compose, on the VM (only if you did not start it from setup.sh)
 ```
 
-**Updating the repo later:** on your own computer, run `git bundle create stacks.bundle main` and the `scp` command again. On the VM, inside the existing `stacks` folder, run `git pull ~/stacks.bundle main` (git, on the VM). Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
+**Updating the repo later:** the share's clone must be on `main` and up to date first. On the VM, inside the existing `stacks` folder, run `git pull` (git, on the VM). Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
 
 ## 3. What you should see
 

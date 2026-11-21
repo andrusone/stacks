@@ -4,21 +4,16 @@ The steps to turn a VM (or a WSL shell, or a container) into a Docker host with 
 
 ## 1. Get the repo onto the host
 
-The repo is private, so the host cannot clone it and holds no key of yours. Your own computer sends it as a bundle: one file that holds the whole repo.
+The host clones the repo from the NAS share, so it needs no bundle, no `scp` and no key of yours. The golden image already mounts the projects share. The share's clone is the source: it must be on branch `main` (a CIFS share has no executable bit, so run from the host's own clone, never from the share).
 
-On your own computer, in your local stacks checkout:
-
-```
-git bundle create stacks.bundle main      # git, on your own computer: packs the main branch into one file
-scp stacks.bundle youruser@192.168.1.50:~/  # scp, on your own computer: copies the file to the host's home folder (use your host's address and user)
-```
-
-Then, over your session on the host:
+Over your session on the host:
 
 ```
-git clone -b main stacks.bundle stacks   # git, on the host: makes the stacks folder from the bundle's main branch
-cd stacks                                # cd, on the host
+git clone -b main /nas/projects/andrusone/stacks ~/stacks   # git, on the host: makes the stacks folder from the share's main branch
+cd ~/stacks                                                 # cd, on the host
 ```
+
+To update later, run `git pull` in `~/stacks` on the host. The share's clone must be on `main` and up to date before you pull.
 
 ## 2. Prepare the host
 
