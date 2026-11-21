@@ -21,11 +21,13 @@ if [ -z "$url" ]; then
 fi
 
 # Gatus answering is the proof the monitor runs; a check that hangs counts as no answer (HL-FR-10).
+# Gatus is published on MONITOR_BIND (docker-compose.yml), so the check goes to that address, as health-sync.sh does.
+host="$(value MONITOR_BIND 127.0.0.1)"
 port="$(value GATUS_PORT 8080)"
-if curl -fsS --max-time 10 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+if curl -fsS --max-time 10 "http://$host:$port/health" >/dev/null 2>&1; then
 	curl -fsS --max-time 10 "$url" >/dev/null 2>&1 ||
 		echo "heartbeat: the outside service did not take the ping, it alerts when pings stop"
 else
-	echo "heartbeat: gatus did not answer on port $port, sent no ping"
+	echo "heartbeat: gatus did not answer on $host:$port, sent no ping"
 fi
 exit 0
