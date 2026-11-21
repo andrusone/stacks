@@ -2,7 +2,8 @@
 # The health-sync timer's installer test (ST247, HL-FR-13). Sources the real compose/monitor/health-sync-install.sh
 # with the helpers setup.sh provides (change, step, report) copied here, and stubs for sudo, systemctl and id,
 # so nothing is installed on this machine. The units go to a temp etc folder, the groups to a temp file, and the
-# monitor folders are temp folders; the temp folder is removed on exit.
+# monitor folders are temp folders; the temp folder is removed on exit. The origin (ST261): a path origin becomes SSH
+# with the key and is left alone without it, and an SSH origin is unchanged.
 # Checks: a first run installs both units (ExecStart and User= for this checkout), enables the timer and grants
 # the groups, counting changes; a second run counts 0; a dry run changes nothing; with no systemd it prints the
 # command and counts nothing; --check reports both ok after the first run and missing before it.
@@ -149,4 +150,35 @@ rm -f "$TIMER_STATE" "$GROUPS_FILE"
 hs_check > "$tmp/check2.out"
 [ "${#MISSING[@]}" -eq 2 ] || fail "--check on a fresh machine: expected 2 missing, got ${MISSING[*]:-none}"
 
-echo "health-sync install test: ok (6 checks)"
+# 7. The origin (ST261): a path origin becomes SSH once the key exists (one change, a second run counts none);
+# without the key a path origin is left alone and the message says how to get one; an SSH origin is unchanged.
+REPO_DIR="$tmp/origin-repo"
+mkdir -p "$REPO_DIR"
+git -C "$REPO_DIR" init -q
+git -C "$REPO_DIR" remote add origin "$tmp/nas/stacks.git"
+HS_KEY="$tmp/key"
+: > "$HS_KEY"
+CHANGES=0
+hs_origin > "$tmp/origin-a.out"
+[ "$(git -C "$REPO_DIR" remote get-url origin)" = "$HS_ORIGIN_SSH" ] || fail "path origin with the key: not switched to $HS_ORIGIN_SSH"
+[ "$CHANGES" -eq 1 ] || fail "path origin with the key: changes $CHANGES, expected 1"
+grep -q "^\[change\] health-sync origin: $tmp/nas/stacks.git -> $HS_ORIGIN_SSH" "$tmp/origin-a.out" || fail "path origin: no change line: $(cat "$tmp/origin-a.out")"
+CHANGES=0
+hs_origin
+[ "$CHANGES" -eq 0 ] || fail "origin second run: changes $CHANGES, expected 0"
+
+git -C "$REPO_DIR" remote set-url origin "$tmp/nas/stacks.git"
+HS_KEY="$tmp/no-such-key"
+CHANGES=0
+hs_origin > "$tmp/origin-b.out"
+[ "$(git -C "$REPO_DIR" remote get-url origin)" = "$tmp/nas/stacks.git" ] || fail "path origin without the key: origin was changed"
+[ "$CHANGES" -eq 0 ] || fail "path origin without the key: counted $CHANGES changes"
+grep -q "run git-access --role prod --deploy-repo andrusone/stacks, then rerun" "$tmp/origin-b.out" || fail "path origin without the key: no message: $(cat "$tmp/origin-b.out")"
+
+git -C "$REPO_DIR" remote set-url origin "$HS_ORIGIN_SSH"
+CHANGES=0
+hs_origin > "$tmp/origin-c.out"
+[ "$(git -C "$REPO_DIR" remote get-url origin)" = "$HS_ORIGIN_SSH" ] || fail "SSH origin: changed"
+[ "$CHANGES" -eq 0 ] && [ ! -s "$tmp/origin-c.out" ] || fail "SSH origin: counted or printed: $(cat "$tmp/origin-c.out")"
+
+echo "health-sync install test: ok (7 checks)"

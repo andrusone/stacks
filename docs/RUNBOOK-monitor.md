@@ -71,6 +71,24 @@ sudo docker compose -f compose/monitor/docker-compose.yml up -d      # docker co
 
 **Updating the repo later:** the share's clone must be on `main` and up to date first. On the VM, inside the existing `stacks` folder, run `git pull` (git, on the VM). Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
 
+**Pulling from GitHub, once:** the clone above points at the NAS share, so the timer that picks up new health files would read a share that goes stale. Give the monitor its own read-only key and point it at GitHub:
+
+```
+git-access --role prod --deploy-repo andrusone/stacks      # git-access, on the VM: makes this VM's deploy key and prints the public key
+```
+
+Add the printed public key as a read-only deploy key on `andrusone/stacks` on GitHub (Settings, Deploy keys). That is the one step by hand: no script of ours registers a key. Then rerun the setup script:
+
+```
+./setup.sh      # bash, on the VM, as your normal user: with the key in place, sets origin to git@github.com:andrusone/stacks.git and says so
+```
+
+If the key is missing, setup leaves origin alone and says `run git-access --role prod --deploy-repo andrusone/stacks, then rerun`. Check that the VM can reach GitHub:
+
+```
+git -C ~/stacks ls-remote origin      # git, on the VM: lists the refs of andrusone/stacks; an error means the deploy key is not registered yet
+```
+
 ## 3. What you should see
 
 - **The status page:** open `http://<MONITOR_BIND>:<GATUS_PORT>` in a browser (for example `http://192.168.1.50:8081`). Within 2 minutes it lists one target, `starter`, with its answers up: host, service and right answer. (A stack with no declared need has no dependency answer, so the starter shows three.)

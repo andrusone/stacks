@@ -12,6 +12,8 @@ Before any VM's first clone, name it and give it its fixed address with `hostboo
 
 Clone the repo first ([RUNBOOK-host.md](RUNBOOK-host.md) step 1), then run `./host/nas-layout.sh` once from the clone. It makes the NAS folders the forge and the monitor back up to, so they must exist before those VMs run their backups. It needs the TrueNAS share mounted, which the golden image does.
 
+**The NAS clone must be current.** The VMs clone the repo from `/nas/projects/andrusone/stacks`, so that clone must be on `main` and up to date before any VM's first clone. Until the owner schedules a refresh, run it by hand on the Linux machine that holds the share: `git -C /nas/projects/andrusone/stacks pull --ff-only` (git, on that machine). The monitor then pulls from GitHub itself once its deploy key is in ([RUNBOOK-monitor.md](RUNBOOK-monitor.md) section 2).
+
 On the monitor page: no VM comes up in this step, so nothing new shows.
 
 ## 2. The monitor

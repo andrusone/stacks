@@ -10,6 +10,14 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 repo="$(cd "$here/../.." && pwd -P)"
 # A timer must never wait on a credential prompt.
 export GIT_TERMINAL_PROMPT=0
+# An SSH origin pulls with this VM's own read-only deploy key and the trusted host keys, as zone-sync.sh does
+# (ST261). Never StrictHostKeyChecking=no.
+if [[ "$(git -C "$repo" remote get-url origin 2>/dev/null)" == git@* ]]; then
+	key="$HOME/.ssh/id_ed25519_github"
+	qkey="$(printf '%q' "$key")"
+	qknown="$(printf '%q' "$(dirname "$key")/known_hosts")"
+	export GIT_SSH_COMMAND="ssh -i $qkey -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=$qknown"
+fi
 
 # A value from the environment, else from compose/monitor/.env, else the default given here.
 value() {
