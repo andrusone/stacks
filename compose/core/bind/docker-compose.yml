@@ -1,5 +1,7 @@
-# BIND for the core stack (ST174, CORE-FR-01 MVP 1). Port 53 inside the
-# container, CORE_BIND_PORT (default 5300) on the host, loopback only.
+# BIND for the core stack (ST174, CORE-FR-01 MVP 1; ST213, CORE-FR-08). Port 53 inside the
+# container, CORE_BIND_PORT (default 5300) on the host, loopback only. named.generated.conf is
+# written by zone.sh from named.conf for CORE_ROLE (primary or secondary) before this comes up.
+# The cache volume keeps a secondary's zone across restarts.
 services:
   bind:
     image: internetsystemsconsortium/bind9:9.18
@@ -8,6 +10,10 @@ services:
       - "127.0.0.1:${CORE_BIND_PORT:-5300}:53/udp"
       - "127.0.0.1:${CORE_BIND_PORT:-5300}:53/tcp"
     volumes:
-      - ./named.conf:/etc/bind/named.conf:ro
+      - ./named.generated.conf:/etc/bind/named.conf:ro
       - ./zone:/etc/bind/zone:ro
+      - core-bind-cache:/var/cache/bind
     restart: unless-stopped
+
+volumes:
+  core-bind-cache:
