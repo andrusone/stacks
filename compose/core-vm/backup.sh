@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# The core node's backup (CORE-FR-06, MVP 3, ST266). Writes core-<UTC yyyymmddThhmmssZ>.tar.gz into $CORE_BACKUP
-# (default /nas/cloud-backup/services/core/backup), under a temporary name and renamed when complete. Keeps the
-# 7 newest. It archives only what git does not hold: the git-ignored files under compose/core-vm and compose/core
-# (the node's .env, and generated config such as bind/named.generated.conf), with every key, token, password or
-# secret value blanked (the names stay), and notes.txt naming the deploy key's path and fingerprint, never the key.
+# The core node's backup (CORE-FR-06, MVP 3, ST266): core-<UTC>.tar.gz in $CORE_BACKUP (default /nas/cloud-backup/services/core/backup),
+# via a temporary name, newest 7 kept. Archives only what git does not hold: git-ignored files under compose/core-vm and
+# compose/core, the .env with every key, token, password or secret value blanked (names stay), and notes.txt naming the
+# deploy key's path and fingerprint, never the key.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -35,7 +34,7 @@ while IFS= read -r f; do
 	case "$f" in "" | */id_* | *.pem | *.key) continue ;; esac
 	mkdir -p "$stage/$(dirname "$f")"
 	if [ "$(basename "$f")" = .env ]; then
-		awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ { if (toupper($1) ~ /KEY|TOKEN|PASS|SECRET/) { print $1 "="; next } } { print }' "$repo/$f" > "$stage/$f"
+		awk '{ if (match($0, /^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=/)) { pre = substr($0, 1, RLENGTH); n = pre; sub(/=$/, "", n); gsub(/^[[:space:]]*(export[[:space:]]+)?/, "", n); if (toupper(n) ~ /KEY|TOKEN|PASS|SECRET/) { print pre; next } } print }' "$repo/$f" > "$stage/$f"
 	else
 		cp -- "$repo/$f" "$stage/$f"
 	fi

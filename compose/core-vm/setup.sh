@@ -98,6 +98,7 @@ else
 fi
 run_host
 zone_units
+backup_units
 first_zone_sync
 core_up
 echo "changes: $CHANGES"

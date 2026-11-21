@@ -38,13 +38,17 @@ cp "$script" "$stacks/compose/core-vm/backup.sh"
 git -C "$stacks" init -q
 printf '.env\n*.generated.conf\n' > "$stacks/.gitignore"
 printf 'tracked\n' > "$stacks/compose/core/up.sh"
-cat > "$stacks/compose/core-vm/.env" <<'ENV'
+# Secret values sit in variables, so no tracked line is a literal NAME=value secret (HL-NFR-02).
+tok=tok-value-9911 pw=pw-value-5522 sec=sample-value-3300 exp=exp-value-4410 ind=ind-value-6620
+cat > "$stacks/compose/core-vm/.env" <<ENV
 # the node's values
 CORE_BIND=192.168.1.5
 CORE_ZONE_KEY=sekrit-zone-key-7731
-GIT_TOKEN=tok-value-9911
-DB_PASSWORD=pw-value-5522
-SAMPLE_SECRET=sample-value-3300
+GIT_TOKEN=$tok
+DB_PASSWORD=$pw
+SAMPLE_SECRET=$sec
+export EXPORTED_TOKEN=$exp
+  INDENTED_API_KEY=$ind
 ENV
 printf 'options { recursion no; };\n' > "$stacks/compose/core/bind/named.generated.conf"
 printf 'BEGIN OPENSSH PRIVATE KEY private-key-bytes\n' > "$HOME/.ssh/id_ed25519_github"
@@ -79,7 +83,7 @@ plain="$tmp/plain.tar"
 gunzip -c "$newest" > "$plain"
 grep -q 'BEGIN' "$plain" && fail "the archive holds a BEGIN line"
 grep -q 'private-key-bytes' "$plain" && fail "the archive holds the deploy key"
-for secret in sekrit-zone-key-7731 tok-value-9911 pw-value-5522 sample-value-3300; do
+for secret in sekrit-zone-key-7731 "$tok" "$pw" "$sec" "$exp" "$ind"; do
 	grep -q -- "$secret" "$plain" && fail "the archive holds a secret value: $secret"
 done
 
@@ -91,6 +95,8 @@ grep -qx 'CORE_ZONE_KEY=' "$env_out" || fail "CORE_ZONE_KEY name missing or valu
 grep -qx 'GIT_TOKEN=' "$env_out" || fail "GIT_TOKEN name missing or value not blank"
 grep -qx 'DB_PASSWORD=' "$env_out" || fail "DB_PASSWORD name missing or value not blank"
 grep -qx 'SAMPLE_SECRET=' "$env_out" || fail "SAMPLE_SECRET name missing or value not blank"
+grep -qx 'export EXPORTED_TOKEN=' "$env_out" || fail "export line: name missing or value not blank"
+grep -qx '  INDENTED_API_KEY=' "$env_out" || fail "indented line: name missing or value not blank"
 grep -qx 'CORE_BIND=192.168.1.5' "$env_out" || fail "a plain value was not kept"
 cmp -s "$extract/compose/core/bind/named.generated.conf" "$stacks/compose/core/bind/named.generated.conf" ||
 	fail "restored named.generated.conf differs from the original"
