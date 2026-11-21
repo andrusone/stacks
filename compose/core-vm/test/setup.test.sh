@@ -209,5 +209,29 @@ check "a peer CIDR exits 2" [ "$code" -eq 2 ]
 check "a peer CIDR is named" grep -qF 'CORE_PEER' <<<"$out"
 check "a refused peer runs nothing" [ ! -s "$log" ]
 
+# 7. The SSH form (ST252): a missing deploy key stops before anything is written and names the command;
+# with the key, .env and zone-sync.env carry the URL and the key's path; a malformed git@ address is refused.
+reset_state
+run_setup CORE_ZONE_URL=git@github.com:andrusone/zone.git HOME="$tmp/nokey" -- --yes
+check "a missing deploy key exits 2" [ "$code" -eq 2 ]
+check "a missing deploy key names the file" grep -qF "no deploy key at $tmp/nokey/.ssh/id_ed25519_github" <<<"$out"
+check "a missing deploy key names the git-access command" grep -qF './tools/git-access/git-access.sh --role prod --deploy-repo andrusone/zone' <<<"$out"
+check "a missing deploy key writes no .env" [ ! -e "$cvm/.env" ]
+check "a missing deploy key runs nothing" [ ! -s "$log" ]
+reset_state
+run_setup CORE_ZONE_URL=git@github.com:andrusone/zone.git HOME="$tmp/nokey" -- --dry-run
+check "a missing deploy key in --dry-run says what would stop" grep -qF 'a real run would stop: no deploy key' <<<"$out"
+reset_state
+mkdir -p "$tmp/keyhome/.ssh"
+: > "$tmp/keyhome/.ssh/id_ed25519_github"
+run_setup CORE_ZONE_URL=git@github.com:andrusone/zone.git HOME="$tmp/keyhome" -- --yes
+check "an SSH zone URL with its key exits 0" [ "$code" -eq 0 ]
+check ".env holds the SSH zone URL" grep -qx 'CORE_ZONE_URL=git@github.com:andrusone/zone.git' "$cvm/.env"
+check "zone-sync env names the deploy key" grep -qx "CORE_ZONE_KEY=$tmp/keyhome/.ssh/id_ed25519_github" "$root/etc/core/zone-sync.env"
+reset_state
+run_setup CORE_ZONE_URL=git@github.com:andrusone -- --yes
+check "a git@ address with no repo exits 2" [ "$code" -eq 2 ]
+check "a git@ address with no repo is named" grep -qF 'CORE_ZONE_URL' <<<"$out"
+
 echo "setup.test: $pass passed, $fails failed"
 [ "$fails" -eq 0 ]
