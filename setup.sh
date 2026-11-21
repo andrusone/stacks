@@ -20,8 +20,11 @@
 #   MISE_VERSION, the service user (system, no login, in the docker group), and $MONITOR_DIR with
 #   gatus and ntfy inside, owned by that user.
 # - In this checkout: mise trust and mise install, so mise.toml is the tool list.
-# - Writes $MONITOR_DIR/gatus/config.yaml from `go run ./cmd/health generate health-starter`,
-#   through a temp file and mv, only when its text differs.
+# - Writes $MONITOR_DIR/gatus/config.yaml from `go run ./cmd/health generate health` (the stacks'
+#   health files; the starter stays in the compose file), through a temp file and mv, only when its text differs.
+# - The health sync's timer (ST247, HL-FR-13): health-sync.service and health-sync.timer in
+#   /etc/systemd/system, run as this checkout's user, who joins the docker and monitor groups.
+#   compose/monitor/health-sync-install.sh does it; without systemd it prints the command.
 # - systemctl enable docker, so the containers restart on boot. Without systemd it counts no change
 #   and prints the command to run.
 # - ufw: if it is active, allows exactly GATUS_PORT and NTFY_PORT (tcp) when not already allowed, and
@@ -437,11 +440,11 @@ gatus_config_step() {
 	local tmp
 	if [ "$DRY_RUN" -eq 1 ]; then
 		CHANGES=$((CHANGES + 1))
-		echo "[dry-run] would: write $GATUS_CONFIG from health-starter, if its text differs"
+		echo "[dry-run] would: write $GATUS_CONFIG from health, if its text differs"
 		return 0
 	fi
 	tmp="$(mktemp)"
-	if ! mise_run "$REPO_DIR" exec -- go run ./cmd/health generate health-starter > "$tmp"; then
+	if ! mise_run "$REPO_DIR" exec -- go run ./cmd/health generate health > "$tmp"; then
 		rm -f "$tmp"
 		echo "setup.sh: the health generator failed; $GATUS_CONFIG is unchanged" >&2
 		exit 1
@@ -451,7 +454,7 @@ gatus_config_step() {
 		step "$GATUS_CONFIG already current"
 		return 0
 	fi
-	change "write $GATUS_CONFIG (generated from health-starter)" write_gatus_config "$tmp"
+	change "write $GATUS_CONFIG (generated from health)" write_gatus_config "$tmp"
 	rm -f "$tmp"
 }
 
@@ -507,6 +510,11 @@ start_offer() {
 		return 1
 	fi
 }
+
+# The health sync's units (ST247), sourced for --check and the run.
+# The installer is linted by its own test task (mise run monitor-test), not followed from here.
+# shellcheck source=/dev/null
+source "$REPO_DIR/compose/monitor/health-sync-install.sh"
 
 # --- --check ---------------------------------------------------------------
 
@@ -579,6 +587,12 @@ run_check() {
 		report ok "docker at boot" "enabled"
 	else
 		report missing "docker at boot" "not enabled"
+	fi
+
+	if [ -z "$problems" ]; then
+		hs_check
+	else
+		report missing "health-sync timer and user" "they need the env file first"
 	fi
 
 	if ! command -v ufw >/dev/null 2>&1; then
@@ -697,6 +711,9 @@ elif systemctl is-enabled --quiet docker; then
 else
 	change "systemctl enable docker (sudo)" sudo systemctl enable docker
 fi
+
+# 7b. The health sync's timer (ST247): see compose/monitor/health-sync-install.sh.
+hs_run
 
 # 8. ufw: open exactly the two ports this stack publishes, and only when ufw is active.
 if ! command -v ufw >/dev/null 2>&1; then
