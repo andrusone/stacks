@@ -241,3 +241,34 @@ resolve_check() {
 	if [ "$int" = no ]; then echo "internal names fail: the zone is not loaded yet or this node's resolver is not yet in use"; fi
 	return 0
 }
+
+# The core backup's units (CORE-FR-06, ST266): backup.service and backup.timer in /etc/systemd/system, the
+# service run as the checkout's user (the .env is theirs, mode 600). Nothing is installed until the NAS folder
+# exists (host/nas-layout.sh makes it); then the timer is enabled and started. A rerun changes nothing.
+CORE_NAS_BACKUP=/nas/cloud-backup/services/core/backup
+backup_units() {
+	local unit want units_changed=0 user
+	step "backup: units and the timer"
+	if [ ! -d "$CORE_NAS_BACKUP" ]; then
+		echo "backup: not installed, the backup folder $CORE_NAS_BACKUP is missing; run host/nas-layout.sh"
+		return 0
+	fi
+	user="$(id -un)"
+	for unit in backup.service backup.timer; do
+		want="$(cat "$SCRIPT_DIR/$unit")"
+		if [ "$unit" = backup.service ]; then
+			# shellcheck disable=SC2001
+			want="$(sed -e "s|^ExecStart=.*|ExecStart=$REPO_DIR/compose/core-vm/backup.sh|" -e "s|^Type=oneshot|Type=oneshot\nUser=$user|" <<< "$want")"
+		fi
+		if [ "$(cat "$ETC/systemd/system/$unit" 2>/dev/null || true)" != "$want" ]; then
+			change "install $ETC/systemd/system/$unit (ExecStart and User= for this checkout)" write_root "$ETC/systemd/system/$unit" "$want"
+			units_changed=1
+		fi
+	done
+	if [ "$units_changed" -eq 1 ]; then change "systemctl daemon-reload" sudo systemctl daemon-reload; fi
+	if systemctl is-enabled --quiet backup.timer 2>/dev/null && systemctl is-active --quiet backup.timer; then
+		step "backup.timer is enabled and running"
+	else
+		change "systemctl enable --now backup.timer" sudo systemctl enable --now backup.timer
+	fi
+}

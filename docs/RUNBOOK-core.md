@@ -118,6 +118,24 @@ The zone has records the new stack does not provide. Keep or drop each one yours
 
 Find them in the `zone` repository's `db.core.andrusonline.com`, under "VIRTUAL / NETWORK SERVICE ALIASES".
 
+## Backup and restore
+
+The backup (CORE-FR-06, ST266) runs every night at 03:45 once the NAS folder exists (`host/nas-layout.sh` makes it). It writes `core-<UTC>.tar.gz` into `/nas/cloud-backup/services/core/backup` and keeps the seven newest. It holds only what git does not:
+
+- the node's `compose/core-vm/.env`, with every key, token, password and secret value blanked. The names stay, so a rebuild knows what to supply.
+- the git-ignored files under `compose/core` and `compose/core-vm`, such as `compose/core/bind/named.generated.conf`.
+- `notes.txt`: the deploy key's path, whether it is there, and its fingerprint. The key itself is never archived.
+
+The owner supplies the secrets again on a rebuild: put each blanked value back into `compose/core-vm/.env` by hand, then run the setup. Nothing in the archive can do that for you.
+
+To restore the files, copy the newest archive off the NAS and untar it into a checkout of `stacks`:
+
+```
+tar -xzf core-<UTC>.tar.gz -C ~/stacks     # on the VM, from the folder holding the archive
+```
+
+Then fill in the blank values in `compose/core-vm/.env` and read `notes.txt` for the deploy key's path. Recreate the key with `git-access` as step 3b says; the archive never has it.
+
 ## If it stops
 
 - `systemd is not running`: the VM needs systemd. A container, a WSL shell or a shell without systemd cannot be a core node.
