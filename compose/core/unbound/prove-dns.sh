@@ -7,7 +7,7 @@
 set -euo pipefail
 
 port="${CORE_DNS_PORT:-5353}"
-dig_() { dig +time=10 +tries=1 @127.0.0.1 -p "$port" "$@"; }
+dig_() { bash "$(dirname "$0")/../dig.sh" +time=10 +tries=1 @127.0.0.1 -p "$port" "$@"; }
 
 host=nas.core.example
 want=192.0.2.20
