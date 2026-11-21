@@ -1,0 +1,11 @@
+# FG-FR-03 (ST265): runs backup.sh once; backup.timer starts it. The paths are where the forge VM's checkout of
+# stacks and its forge .env are, and the backup folder on the NAS; setup.sh fills them in (forge-vm/setup.sh).
+[Unit]
+Description=Back up the forge's state to the NAS
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/stacks/compose/forge-vm/.env
+Environment=FORGE_BACKUP=/nas/cloud-backup/services/forge/backup
+ExecStart=/bin/bash /opt/stacks/compose/forge/backup.sh

@@ -618,6 +618,36 @@ if [ "$ENV_PRESENT" -eq 1 ]; then
 	fi
 fi
 
+# --- the backup timer (FG-FR-03, ST265) -------------------------------------
+
+# Units from compose/forge/, with this checkout's paths and the backup folder filled in; the timer waits for the folder.
+FORGE_UNITS="${FORGE_UNITS:-/etc/systemd/system}"
+FORGE_NAS_BACKUP="${FORGE_NAS_BACKUP:-/nas/cloud-backup/services/forge/backup}"
+backup_unit_text() {
+	sed -e "s|^ExecStart=.*|ExecStart=/bin/bash $REPO_DIR/compose/forge/backup.sh|" \
+		-e "s|^EnvironmentFile=.*|EnvironmentFile=$ENV_FILE|" \
+		-e "s|^Environment=FORGE_BACKUP=.*|Environment=FORGE_BACKUP=$FORGE_NAS_BACKUP|" "$REPO_DIR/compose/forge/$1"
+}
+backup_timer() {
+	local unit tmp reload=0
+	if [ ! -d "$FORGE_NAS_BACKUP" ]; then echo "backup timer: not installed, run host/nas-layout.sh first"; return 0; fi
+	if [ ! -d "$SYSTEMD_RUN_DIR" ]; then echo "backup timer: no systemd here, so not installed"; return 0; fi
+	for unit in backup.service backup.timer; do
+		cmp -s <(backup_unit_text "$unit") "$FORGE_UNITS/$unit" 2>/dev/null && continue
+		tmp="$(mktemp)"
+		backup_unit_text "$unit" > "$tmp"
+		change "install $FORGE_UNITS/$unit for this checkout (sudo)" sudo install -D -m 0644 "$tmp" "$FORGE_UNITS/$unit"
+		rm -f "$tmp"
+		reload=1
+	done
+	if [ "$reload" -eq 1 ]; then change "systemctl daemon-reload (sudo)" sudo systemctl daemon-reload; fi
+	if systemctl is-enabled --quiet backup.timer 2>/dev/null && systemctl is-active --quiet backup.timer; then
+		step "backup.timer is enabled and running"
+	else
+		change "systemctl enable --now backup.timer (sudo)" sudo systemctl enable --now backup.timer
+	fi
+}
+if [ "$ENV_PRESENT" -eq 1 ]; then backup_timer; fi
 # --- start the forge (ST94) -------------------------------------------------
 
 # Asks "Start the forge now? [Y/n]" (yes by default). Starts only on an explicit yes (Enter counts) at a

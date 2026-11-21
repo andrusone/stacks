@@ -1,0 +1,12 @@
+# FG-FR-03 (ST265): every night at 02:30, plus up to 10 minutes of random delay; a run missed while the VM was
+# off runs at the next boot. Starts backup.service. setup.sh enables it only once the backup folder exists.
+[Unit]
+Description=Run the forge backup every night
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

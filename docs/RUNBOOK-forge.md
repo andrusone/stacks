@@ -156,6 +156,18 @@ git pull      # git, on the forge VM: brings the new commits from the share into
 
 Do not delete the `stacks` folder to start over: your `.env` lives in it and git does not track it.
 
+### 4e. Backup
+
+The forge is backed up every night at 02:30 (up to 10 minutes later, at random): `backup.timer` on the VM runs `compose/forge/backup.sh` as root, reading `FORGE_DATA` from the forge `.env`. `setup.sh` installs and enables it.
+
+- **Where:** `/nas/cloud-backup/services/forge/backup`, as `forge-<UTC time>.zip.age`: Forgejo's own dump (repos, pull requests, accounts), encrypted with age (ST271) to `FORGE_BACKUP_AGE_RECIPIENT`, so the copy holds only ciphertext. It is not a copy of the data folder. Everything under cloud-backup is sent to the cloud.
+- **How many:** the newest 7 are kept.
+- **The folder must exist:** the timer is enabled only when that folder exists; `./host/nas-layout.sh` makes it. Without it, `setup.sh` prints `backup timer: not installed, run host/nas-layout.sh first` and enables nothing.
+- **The recipient must be set first:** each night's run reads `FORGE_BACKUP_AGE_RECIPIENT` (the public `age1...` key) from `compose/forge/.env`. Until it is there, every run stops with `no FORGE_BACKUP_AGE_RECIPIENT` and writes nothing. `setup.sh` does not check it, so look at the first run's result (below).
+- **Check the next run:** `systemctl list-timers backup.timer      # systemctl, on the forge VM`
+
+Once a month, run the restore drill by hand from the stacks folder on a machine with Docker that is not running the forge (the drill refuses to start while a container named `forge` exists, so not on the forge VM while it runs): `mise run forge-drill      # mise, from the stacks folder: a temporary forge, restore and runner check; prints PASS up, PASS reconnect, PASS restore, PASS runner, PASS cleanup, then drill: all steps PASS`. Any FAIL line names the step that failed.
+
 ## 5. Runner VM: make the token
 
 Make the registration token on the forge's page, logged in as the admin: **Settings**, then **Actions**, then **Runners**, then **create new runner**. Copy the token it shows; the runner VM's setup script asks for it in section 6.
@@ -395,7 +407,7 @@ The runner needs nothing: it re-registers only if you delete it and make a new t
 ## 10. What this does not cover
 
 - Role tokens and a protected `main` branch.
-- The backup and the restore. Both scripts exist and are run by hand, not on a schedule. They are the MVP 1 scripts: they call plain `docker`, so they run with `sudo`, and they read `FORGE_DATA` and `FORGE_BACKUP` from the command line. The copy is encrypted with age (ST271): it is written as `forge-<stamp>.zip.age`, and no plain zip reaches the backup folder. The backup reads its public recipient, `FORGE_BACKUP_AGE_RECIPIENT`, from `compose/forge/.env`; you generate the key pair with your own D10 script on your own machine, and the public half (`age1...`) is the only part that goes in `.env`. The restore needs the private half, the identity file, named on the command line as `FORGE_BACKUP_AGE_IDENTITY`; keep it off the NAS and off the data disk, and point to it only for the restore. `FORGE_BACKUP` must lie outside the data folder. The backup copy goes to a folder on the NAS share that the golden image already mounts at `/nas/cloud-backup`, in `services/forge/backup`; that copy is the SMB copy, not the live data.
+- The restore, which is run by hand only. The backup runs nightly from the timer (section 4e). Both are the MVP 1 scripts: they call plain `docker`, so they run with `sudo`, and by hand they read `FORGE_DATA` and `FORGE_BACKUP` from the command line; the timer's unit sets them. The copy is encrypted with age (ST271): it is written as `forge-<stamp>.zip.age`, and no plain zip reaches the backup folder. The backup reads its public recipient, `FORGE_BACKUP_AGE_RECIPIENT`, from `compose/forge/.env`; you generate the key pair with your own D10 script on your own machine, and the public half (`age1...`) is the only part that goes in `.env`. The restore needs the private half, the identity file, named on the command line as `FORGE_BACKUP_AGE_IDENTITY`; keep it off the NAS and off the data disk, and point to it only for the restore. `FORGE_BACKUP` must lie outside the data folder. The backup copy goes to a folder on the NAS share that the golden image already mounts at `/nas/cloud-backup`, in `services/forge/backup`; that copy is the SMB copy, not the live data.
 
   Install age system-wide once on the forge VM. The repo's pinned copy (mise) is not on the PATH that `sudo` uses, so the backup and the restore would stop with `age: command not found`. Check it with `sudo bash -c 'command -v age'`, which should print `/usr/bin/age`:
 

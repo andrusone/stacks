@@ -82,3 +82,77 @@ out="$(run_section "$stale" run)"
 expect_line "$out" "health file: in git"
 
 echo "PASS: forge health-file check (4 cases: missing, in git after fetch, dry run does not fetch, real run fetches)"
+
+# --- the backup timer (FG-FR-03, ST265) -------------------------------------
+# The real backup section of setup.sh, with a stub systemctl on PATH, sudo run as this user, the units going to a
+# temp folder and the NAS folder a temp folder. Nothing is installed here.
+repo="$(cd "$here/../../.." && pwd -P)"
+bdir="$tmp/backup"
+mkdir -p "$bdir/bin" "$bdir/systemd"
+bsection="$bdir/backup-section.sh"
+sed -n '/^# --- the backup timer (FG-FR-03, ST265)/,/^# --- start the forge/p' "$script" | sed '$d' > "$bsection"
+[ -s "$bsection" ] || { echo "FAIL: backup section not found in setup.sh" >&2; exit 1; }
+cat > "$bdir/bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+# Test stub: a timer is enabled and active when its state file exists; enable --now creates it.
+case "$1" in
+daemon-reload) echo "daemon-reload" >> "$BSTUB_LOG" ;;
+is-enabled | is-active) [ -f "$BSTATE-${!#}" ] ;;
+enable) echo "enable ${*: -1}" >> "$BSTUB_LOG"; touch "$BSTATE-${!#}" ;;
+*) exit 2 ;;
+esac
+STUB
+chmod +x "$bdir/bin/systemctl"
+export PATH="$bdir/bin:$PATH" BSTUB_LOG="$bdir/stub.log" BSTATE="$bdir/timer-enabled"
+sudo() { "$@"; }
+
+# Runs the real section in MODE ($1); the NAS folder exists only when $2 is "nas".
+run_backup() {
+	local mode=$1 nas=$2
+	# shellcheck disable=SC2030,SC2031,SC2034,SC2329
+	(
+		step() { echo "$*"; }
+		change() {
+			local description=$1
+			shift
+			CHANGES=$((CHANGES + 1))
+			if [ "$MODE" = dry ]; then echo "[dry-run] would: $description"; return 0; fi
+			echo "[change] $description"
+			"$@"
+		}
+		REPO_DIR="$repo" ENV_FILE="$bdir/forge.env" MODE="$mode" ENV_PRESENT=1 CHANGES=0
+		SYSTEMD_RUN_DIR="$bdir/systemd" FORGE_UNITS="$bdir/units" FORGE_NAS_BACKUP="$bdir/$nas/backup"
+		# shellcheck source=/dev/null
+		. "$bsection"
+		echo "changes: $CHANGES"
+	)
+}
+
+# 5. No NAS folder: the one line, no unit, no timer, no change.
+out="$(run_backup run none)"
+expect_line "$out" "backup timer: not installed, run host/nas-layout.sh first"
+expect_line "$out" "changes: 0"
+[ ! -e "$bdir/units/backup.timer" ] && [ ! -e "$bdir/timer-enabled-backup.timer" ] || { echo "FAIL: backup section installed without its folder" >&2; exit 1; }
+
+# 6. The folder exists: first run installs both units (paths filled in), reloads, enables the timer: 4 changes.
+mkdir -p "$bdir/nas/backup"
+out="$(run_backup run nas)"
+expect_line "$out" "changes: 4"
+expect_line "$(cat "$bdir/stub.log")" "enable backup.timer"
+grep -qx "ExecStart=/bin/bash $repo/compose/forge/backup.sh" "$bdir/units/backup.service" || { echo "FAIL: ExecStart not filled in" >&2; exit 1; }
+grep -qx "EnvironmentFile=$bdir/forge.env" "$bdir/units/backup.service" || { echo "FAIL: EnvironmentFile not filled in" >&2; exit 1; }
+grep -qx "Environment=FORGE_BACKUP=$bdir/nas/backup" "$bdir/units/backup.service" || { echo "FAIL: FORGE_BACKUP not filled in" >&2; exit 1; }
+cmp -s "$bdir/units/backup.timer" "$repo/compose/forge/backup.timer" || { echo "FAIL: backup.timer differs from the repo file" >&2; exit 1; }
+
+# 7. A rerun changes nothing and says the timer runs.
+out="$(run_backup run nas)"
+expect_line "$out" "changes: 0"
+expect_line "$out" "backup.timer is enabled and running"
+
+# 8. A dry run on a fresh units folder writes nothing (it says what it would install).
+rm -rf "$bdir/units" "$bdir/timer-enabled-backup.timer"
+out="$(run_backup dry nas)"
+expect_line "$out" "changes: 4"
+[ ! -e "$bdir/units" ] || { echo "FAIL: dry run wrote the units folder" >&2; exit 1; }
+
+echo "PASS: forge backup timer (4 cases: no folder, first run installs and enables, rerun changes 0, dry run writes nothing)"
