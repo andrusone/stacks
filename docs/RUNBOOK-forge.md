@@ -163,6 +163,7 @@ The forge is backed up every night at 02:30 (up to 10 minutes later, at random):
 - **Where:** `/nas/cloud-backup/services/forge/backup`, as `forge-<UTC time>.zip.age`: Forgejo's own dump (repos, pull requests, accounts), encrypted with age (ST271) to `FORGE_BACKUP_AGE_RECIPIENT`, so the copy holds only ciphertext. It is not a copy of the data folder. Everything under cloud-backup is sent to the cloud.
 - **How many:** the newest 7 are kept.
 - **The folder must exist:** the timer is enabled only when that folder exists; `./host/nas-layout.sh` makes it. Without it, `setup.sh` prints `backup timer: not installed, run host/nas-layout.sh first` and enables nothing.
+- **The recipient must be set first:** each night's run reads `FORGE_BACKUP_AGE_RECIPIENT` (the public `age1...` key) from `compose/forge/.env`. Until it is there, every run stops with `no FORGE_BACKUP_AGE_RECIPIENT` and writes nothing. `setup.sh` does not check it, so look at the first run's result (below).
 - **Check the next run:** `systemctl list-timers backup.timer      # systemctl, on the forge VM`
 
 Once a month, run the restore drill by hand from the stacks folder on a machine with Docker that is not running the forge (the drill refuses to start while a container named `forge` exists, so not on the forge VM while it runs): `mise run forge-drill      # mise, from the stacks folder: a temporary forge, restore and runner check; prints PASS up, PASS reconnect, PASS restore, PASS runner, PASS cleanup, then drill: all steps PASS`. Any FAIL line names the step that failed.
