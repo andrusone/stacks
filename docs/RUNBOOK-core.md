@@ -54,7 +54,7 @@ From another machine on `CORE_LAN` (not the VM):
 mise run core-lan-prove -- <CORE_BIND>     # mise, in a stacks checkout: a DNS answer for the fixture host, a DNSSEC failure, a time query, and the closed ports probed
 ```
 
-The task is added by ST215. Until that story is on `main`, this step has no task to run; the steps above stand without it.
+`CORE_PROVE_HOST` names the host it looks up (default `nas.core.andrusonline.com`); set it to any name in your zone.
 
 Run it from a LAN client, not from the VM: the point is that a client on the LAN gets the answers and a client off it does not.
 
