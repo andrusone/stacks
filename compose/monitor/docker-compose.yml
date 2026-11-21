@@ -45,3 +45,21 @@ services:
     depends_on:
       - starter
       - ntfy
+
+  # The Beszel hub (HL-FR-02 MVP 2, ST258): the host answer's metrics source. Only the hub runs here;
+  # agents on the VMs are a later story. The pin is the image tag below, in this file only; changing it
+  # and running up again is the upgrade. Its data is a bind mount under MONITOR_DIR, kept across upgrades.
+  # Its own login and its own key are made on first run, in the hub's web page, not in this file.
+  beszel:
+    image: henrygd/beszel:0.21.2
+    restart: unless-stopped
+    volumes:
+      - ${MONITOR_DIR:?set MONITOR_DIR in compose/monitor/.env}/beszel:/beszel_data
+    ports:
+      - "${MONITOR_BIND:?set MONITOR_BIND in compose/monitor/.env}:${BESZEL_PORT:-8091}:8090"
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://localhost:8090"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
