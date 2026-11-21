@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# The monitor backup test (ST250, HL-FR-14 MVP 3). Temp folders only: a fixture state folder with an
-# ntfy cache, and a fixture NAS folder. A date stub counts up so quick runs get distinct names.
+# The monitor backup test (ST250, ST259, HL-FR-14 MVP 3). Temp folders only: a fixture state folder holding
+# the ntfy cache and a .env with the topic (both secret) beside Gatus's history and the Beszel data, and a
+# fixture NAS folder. A date stub counts up so quick runs get distinct names.
 # Checks: one archive made with no temp file left; eight runs leave seven, the newest kept; a missing
 # backup folder fails with its message; a backup folder inside the state folder is refused; the archive
-# lists only the ntfy folder, holds no topic value, and restores the cache file byte-for-byte.
+# lists only gatus/history and beszel, holds neither the ntfy folder nor .env, holds no topic value, and
+# restores the history file byte-for-byte; with nothing to back up, a valid empty archive is written and
+# the run says so on stderr.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -31,8 +34,11 @@ export PATH="$tmp/bin:$PATH"
 topic="sekrit-topic-7731"
 mon="$tmp/monitor"
 nas="$tmp/nas/monitor/backup"
-mkdir -p "$mon/ntfy" "$nas"
-printf 'cache-bytes-42' > "$mon/ntfy/cache.db"
+mkdir -p "$mon/ntfy" "$mon/gatus/history" "$mon/beszel" "$nas"
+printf 'cache-bytes-%s' "$topic" > "$mon/ntfy/cache.db"
+printf 'NTFY_TOPIC=%s\n' "$topic" > "$mon/.env"
+printf 'history-bytes-42' > "$mon/gatus/history/history.json"
+printf 'beszel-bytes-43' > "$mon/beszel/data.db"
 
 run() {
 	MONITOR_DIR="$mon" MONITOR_BACKUP="$nas" NTFY_TOPIC="$topic" bash "$script"
@@ -53,15 +59,27 @@ for _ in $(seq 7); do run >/dev/null || fail "run exited non-zero"; done
 [ ! -f "$nas/monitor-20260101T000001Z.tar.gz" ] || fail "the oldest archive was not removed"
 
 newest="$nas/monitor-20260101T000008Z.tar.gz"
-files="$(tar -tzf "$newest")"
-[ "$files" = "$(printf 'ntfy/\nntfy/cache.db')" ] || fail "archive lists unexpected files: $files"
+files="$(tar -tzf "$newest" | LC_ALL=C sort)"
+want="$(printf 'beszel/\nbeszel/data.db\ngatus/history/\ngatus/history/history.json')"
+[ "$files" = "$want" ] || fail "archive lists unexpected files: $files"
 plain="$tmp/plain.tar"
 gunzip -c "$newest" > "$plain"
 grep -q -- "$topic" "$plain" && fail "the archive holds the topic value"
 restore="$tmp/restore"
 mkdir "$restore"
 tar -xf "$plain" -C "$restore"
-cmp -s "$restore/ntfy/cache.db" "$mon/ntfy/cache.db" || fail "restored cache.db differs from the original"
+cmp -s "$restore/gatus/history/history.json" "$mon/gatus/history/history.json" || fail "restored history differs from the original"
+
+# Nothing to back up: a valid empty archive, and the run says so on stderr.
+empty_mon="$tmp/empty-monitor"
+empty_nas="$tmp/empty-nas"
+mkdir -p "$empty_mon" "$empty_nas"
+err="$(MONITOR_DIR="$empty_mon" MONITOR_BACKUP="$empty_nas" bash "$script" 2>&1 >/dev/null)" ||
+	fail "an empty state folder exited non-zero"
+case "$err" in *"nothing to back up"*) ;; *) fail "the empty run did not say so: $err" ;; esac
+empty_archive="$(find "$empty_nas" -name 'monitor-*.tar.gz')"
+[ "$(printf '%s\n' "$empty_archive" | wc -l)" = 1 ] || fail "the empty run should write one archive"
+[ -z "$(tar -tzf "$empty_archive")" ] || fail "the empty archive lists files"
 
 out="$(MONITOR_DIR="$mon" MONITOR_BACKUP="$tmp/absent" bash "$script" 2>&1 >/dev/null)" &&
 	fail "a missing backup folder exited zero"

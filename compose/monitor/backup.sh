@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# The monitor's state backup (HL-FR-14, MVP 3, ST250). Copies $MONITOR_DIR/ntfy, the alert cache, into
-# $MONITOR_BACKUP as monitor-<UTC yyyymmddThhmmssZ>.tar.gz, written under a temporary name and renamed
-# when complete. Only the 7 newest monitor-* archives are kept. The archive holds the ntfy folder alone,
-# so compose/monitor/.env and the topic never reach the NAS (HL-NFR-02). Values come from the environment,
-# else from compose/monitor/.env. It never creates the NAS layout: host/nas-layout.sh does.
+# The monitor's state backup (HL-FR-14, MVP 3, ST250, ST259). Copies what is not a secret under $MONITOR_DIR,
+# Gatus's history (gatus/history) and the Beszel hub's data (beszel), into $MONITOR_BACKUP as
+# monitor-<UTC yyyymmddThhmmssZ>.tar.gz, written under a temporary name and renamed when complete. Only the 7
+# newest monitor-* archives are kept. The ntfy folder is never archived: its cache.db may hold the topic, a
+# secret (HL-NFR-02), and the topic is given again on a rebuild. Values come from the environment, else from
+# compose/monitor/.env. It never creates the NAS layout: host/nas-layout.sh does.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -28,12 +29,20 @@ case "$backup/" in
 	exit 1
 	;;
 esac
-[ -d "$mon/ntfy" ] || { echo "monitor-backup: no ntfy folder in $mon" >&2; exit 1; }
+
+members=()
+[ -d "$mon/gatus/history" ] && members+=(gatus/history)
+[ -d "$mon/beszel" ] && members+=(beszel)
 
 name="monitor-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 part="$backup/.$name.part"
 trap 'rm -f -- "$part"' EXIT
-tar -C "$mon" -czf "$part" ntfy
+if [ "${#members[@]}" -gt 0 ]; then
+	tar -C "$mon" -czf "$part" --exclude='.env' --exclude='cache.db' --exclude='*ntfy*' "${members[@]}"
+else
+	echo "monitor-backup: nothing to back up in $mon" >&2
+	tar -czf "$part" -T /dev/null
+fi
 mv -- "$part" "$backup/$name"
 trap - EXIT
 
