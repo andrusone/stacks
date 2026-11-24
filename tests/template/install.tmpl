@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# test stack @NAME@: the install step. plan or apply; anything else exits 1
+set -euo pipefail
+case "${1:-}" in
+  plan) echo "would: install @NAME@" ;;
+  apply) echo "done: install @NAME@" ;;
+  *) echo "error: install takes plan or apply" >&2; exit 1 ;;
+esac
+echo "changes: 1"
