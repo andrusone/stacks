@@ -21,4 +21,9 @@ if [ "${#missing[@]}" -gt 0 ]; then
 fi
 
 cd "$ROOT"
-exec "${GO[@]}" run ./cmd/setup-stacks "$@"
+# Build into a temp folder and run that binary, so its exit code (0, 1 or 2) is the script's exit code.
+# (go run exits 1 whenever the program exits non-zero.) Nothing is cached between calls.
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+"${GO[@]}" build -o "$tmp/setup-stacks" ./cmd/setup-stacks
+"$tmp/setup-stacks" "$@"

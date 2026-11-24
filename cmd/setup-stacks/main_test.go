@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -28,6 +30,21 @@ func TestHelpEmptyFolder(t *testing.T) {
 	}
 	if last := lines[len(lines)-1]; !strings.Contains(last, "no stacks") || !strings.HasSuffix(last, dir) {
 		t.Errorf("last line %q, want the no-stacks line ending in %q", last, dir)
+	}
+}
+
+// The script is what the user runs, so its exit code must match run()'s: go run would turn 2 into 1.
+func TestScriptPassesExitCode(t *testing.T) {
+	cmd := exec.Command("bash", "../../setup-stacks.sh", "--apply")
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("script --apply: err %v, want exit 2", err)
+	}
+	if errb.String() != "error: not built yet\n" {
+		t.Errorf("script stderr %q, want only the not-built line", errb.String())
 	}
 }
 
