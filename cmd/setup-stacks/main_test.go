@@ -234,24 +234,6 @@ func TestConflictsExitTwoWithOneLine(t *testing.T) {
 	}
 }
 
-// --stack alone is the dry run now (dryrun_test.go) and --check is built (checkrun_test.go); --apply is still not built.
-func TestApplyNotBuilt(t *testing.T) {
-	dir := t.TempDir()
-	writeStack(t, dir, "alpha", "first one")
-	for _, argv := range [][]string{{"--stack", "alpha", "--apply"}} {
-		code, out, errs := runDir(t, dir, argv...)
-		if code != 2 {
-			t.Errorf("%q: exit %d, want 2", argv, code)
-		}
-		if errs != "error: not built yet\n" {
-			t.Errorf("%q: stderr %q, want only the not-built line", argv, errs)
-		}
-		if out != "" {
-			t.Errorf("%q: stdout %q, want empty", argv, out)
-		}
-	}
-}
-
 // The script is what the user runs, so its exit code must match run()'s: go run would turn 2 into 1.
 func TestScriptPassesExitCode(t *testing.T) {
 	cases := []struct {

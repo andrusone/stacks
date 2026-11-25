@@ -17,6 +17,7 @@ type env struct {
 	Stacks string
 	Cfg    installer.Config
 	Pre    installer.PreflightEnv
+	Exec   installer.Exec
 	Unit   func(unit string) (enabled, active bool)
 }
 
@@ -37,6 +38,7 @@ func realEnv(home string) env {
 			OSReleasePath: "/etc/os-release",
 			LockPath:      "/tmp/setup-stacks.lock",
 		},
+		Exec: realExec,
 		Unit: unitState,
 	}
 }

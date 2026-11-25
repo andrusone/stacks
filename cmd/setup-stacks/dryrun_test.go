@@ -231,7 +231,7 @@ func TestDryRunCloneAndMountBlock(t *testing.T) {
 }
 
 // Flag errors, no flags, an unknown stack and --help never reach the preflight: they behave as before even
-// as root, which the preflight would refuse.
+// as root, which the preflight would refuse. (--apply runs it: applyrun_test.go covers root.)
 func TestPreflightNotCalledByOtherPaths(t *testing.T) {
 	stacks := t.TempDir()
 	writeStack(t, stacks, "alpha", "first one")
@@ -245,7 +245,6 @@ func TestPreflightNotCalledByOtherPaths(t *testing.T) {
 		{nil, 1},
 		{[]string{"--stack", "nosuch"}, 1},
 		{[]string{"--bogus"}, 2},
-		{[]string{"--stack", "alpha", "--apply"}, 2},
 	}
 	for _, c := range cases {
 		code, _, errs := runEnv(e, c.argv...)
