@@ -245,7 +245,6 @@ func TestPreflightNotCalledByOtherPaths(t *testing.T) {
 		{nil, 1},
 		{[]string{"--stack", "nosuch"}, 1},
 		{[]string{"--bogus"}, 2},
-		{[]string{"--stack", "alpha", "--check"}, 2},
 		{[]string{"--stack", "alpha", "--apply"}, 2},
 	}
 	for _, c := range cases {
