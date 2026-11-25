@@ -3,10 +3,89 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// writeStack makes <dir>/<name>/stack.toml with every required field.
+func writeStack(t *testing.T, dir, name, meaning string) {
+	t.Helper()
+	folder := filepath.Join(dir, name)
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	text := fmt.Sprintf(`name = %q
+meaning = %q
+version = "1"
+user = "svc-%s"
+units = ["%s.service"]
+ports = [8080]
+nas_paths = []
+env = []
+`, name, meaning, name, name)
+	if err := os.WriteFile(filepath.Join(folder, "stack.toml"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func helpWith(t *testing.T, dir string) []string {
+	t.Helper()
+	t.Setenv("STACKS_DIR", dir)
+	var out, errb bytes.Buffer
+	if code := run([]string{"--help"}, &out, &errb); code != 0 {
+		t.Fatalf("exit %d, want 0; stderr %q", code, errb.String())
+	}
+	if errb.Len() != 0 {
+		t.Errorf("stderr %q, want empty", errb.String())
+	}
+	return strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+}
+
+func TestHelpThreeStacksOneLineEach(t *testing.T) {
+	dir := t.TempDir()
+	writeStack(t, dir, "zeta", "last one")
+	writeStack(t, dir, "alpha", "first one")
+	writeStack(t, dir, "mid", "middle one")
+	lines := helpWith(t, dir)
+	if len(lines) != 5+3 {
+		t.Fatalf("got %d lines, want 8:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	want := []string{"  alpha  first one", "  mid  middle one", "  zeta  last one"}
+	for i, w := range want {
+		if lines[5+i] != w {
+			t.Errorf("line %d = %q, want %q", 5+i, lines[5+i], w)
+		}
+	}
+	for _, l := range lines {
+		if strings.Contains(l, "no stacks yet") {
+			t.Errorf("no-stacks line should be gone: %q", l)
+		}
+	}
+}
+
+func TestHelpBrokenStackStillListsGoodOnes(t *testing.T) {
+	dir := t.TempDir()
+	writeStack(t, dir, "good", "works")
+	writeStack(t, dir, "bad", "broken")
+	// Break bad's stack.toml: a parse error on line 2.
+	if err := os.WriteFile(filepath.Join(dir, "bad", "stack.toml"), []byte("name = \"bad\"\nmeaning = \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lines := helpWith(t, dir)
+	if len(lines) != 5+2 {
+		t.Fatalf("got %d lines, want 7:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	if lines[5] != "  good  works" {
+		t.Errorf("good stack line = %q", lines[5])
+	}
+	if !strings.HasPrefix(lines[6], "problem: ") || !strings.Contains(lines[6], filepath.Join(dir, "bad", "stack.toml")) {
+		t.Errorf("problem line = %q, want it to name the broken file", lines[6])
+	}
+}
 
 func TestHelpEmptyFolder(t *testing.T) {
 	dir := t.TempDir()

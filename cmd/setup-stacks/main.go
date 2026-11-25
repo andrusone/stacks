@@ -1,4 +1,4 @@
-// Command setup-stacks is the stacks installer (SI-FR-01, MVP 1 in ST280). Only --help is built so far.
+// Command setup-stacks is the stacks installer (SI-FR-01, MVP 1 in ST280; ST283 lists the stacks). Only --help is built so far.
 package main
 
 import (
@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"stacks/internal/installer"
+	"stacks/internal/stack"
 )
 
 func main() {
@@ -23,6 +24,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "error: no home folder, and STACKS_DIR is not set")
 		return 1
 	}
-	installer.Help(stdout, installer.StacksDir(os.Getenv("STACKS_DIR"), home))
+	dir := installer.StacksDir(os.Getenv("STACKS_DIR"), home)
+	stacks, errs := stack.Load(dir)
+	installer.Help(stdout, dir, stacks, errs)
 	return 0
 }
