@@ -58,7 +58,7 @@ func loadOne(dir, folder string) (Stack, error) {
 	if _, err := toml.Decode(text, &raw); err != nil {
 		var pe toml.ParseError
 		if errors.As(err, &pe) {
-			return Stack{}, fmt.Errorf("%s:%d: %s", path, pe.Position.Line, pe.Message)
+			return Stack{}, fmt.Errorf("%s:%d: %s", path, parseLine(text, pe), parseMessage(pe))
 		}
 		return Stack{}, fmt.Errorf("%s:1: %w", path, err)
 	}
@@ -85,6 +85,29 @@ func loadOne(dir, folder string) (Stack, error) {
 		return Stack{}, d.err
 	}
 	return s, nil
+}
+
+// parseLine is the line a TOML parse error is on. It is counted from the
+// error's byte offset, not taken from Position.Line: that is the lexer's
+// running count, one too high for an error raised at a newline and one too
+// low for an unexpected end of file that has no final newline.
+func parseLine(text string, pe toml.ParseError) int {
+	start := min(max(pe.Position.Start, 0), len(text))
+	return strings.Count(text[:start], "\n") + 1
+}
+
+// parseMessage is the library's text for a parse error. Errors made from a Go
+// error keep that text in an unexported field and leave Message empty, so it
+// is taken from Error(), which reads "toml: line N (last key K): text".
+func parseMessage(pe toml.ParseError) string {
+	if pe.Message != "" {
+		return pe.Message
+	}
+	msg := strings.TrimPrefix(pe.Error(), fmt.Sprintf("toml: line %d", pe.Position.Line))
+	if pe.LastKey != "" {
+		msg = strings.TrimPrefix(msg, fmt.Sprintf(" (last key %q)", pe.LastKey))
+	}
+	return strings.TrimPrefix(msg, ": ")
 }
 
 // decoder reads typed values from a parsed stack.toml. The first problem is
