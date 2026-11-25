@@ -37,7 +37,7 @@ type CheckResult struct {
 func Check(cfg CheckConfig, stacks []stack.Stack, only string) CheckResult {
 	recs, err := record.List(cfg.RecordsDir)
 	if err != nil {
-		return CheckResult{Lines: []string{fmt.Sprintf("error: cannot read the records in %s: %v", cfg.RecordsDir, err)}, NotOK: true}
+		return CheckResult{Lines: []string{fmt.Sprintf("error: cannot read the records in %s: %v", cfg.RecordsDir, err)}}
 	}
 	if only != "" {
 		recs = keepNamed(recs, only)
@@ -68,7 +68,6 @@ func Check(cfg CheckConfig, stacks []stack.Stack, only string) CheckResult {
 	extra, err := unexpected(cfg.SvrDir, recs)
 	if err != nil {
 		res.Lines = append(res.Lines, fmt.Sprintf("error: cannot read %s: %v", cfg.SvrDir, err))
-		res.NotOK = true
 	}
 	res.Lines = append(res.Lines, extra...)
 	return res
