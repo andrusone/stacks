@@ -1,4 +1,4 @@
-// Command setup-stacks is the stacks installer (SI-FR-01, MVP 1 in ST280; ST283 lists the stacks). Only --help is built so far.
+// Command setup-stacks is the stacks installer (SI-FR-01, MVP 1 in ST280; ST283 lists the stacks; ST287 parses the flags). Only --help, the flag errors and the stack checks are built so far.
 package main
 
 import (
@@ -14,9 +14,10 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 || args[0] != "--help" {
-		fmt.Fprintln(stderr, "error: not built yet")
+func run(argv []string, stdout, stderr io.Writer) int {
+	a, err := parseArgs(argv)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %s\n", err)
 		return 2
 	}
 	home, err := os.UserHomeDir()
@@ -26,6 +27,30 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	dir := installer.StacksDir(os.Getenv("STACKS_DIR"), home)
 	stacks, errs := stack.Load(dir)
-	installer.Help(stdout, dir, stacks, errs)
-	return 0
+	if a.Help {
+		installer.Help(stdout, dir, stacks, errs)
+		return 0
+	}
+	if a == (args{}) {
+		fmt.Fprintln(stdout, "no stack was named")
+		installer.Help(stdout, dir, stacks, errs)
+		return 1
+	}
+	if a.Stack != "" && !known(stacks, a.Stack) {
+		fmt.Fprintf(stdout, "unknown stack: %s\n", a.Stack)
+		installer.Help(stdout, dir, stacks, errs)
+		return 1
+	}
+	fmt.Fprintln(stderr, "error: not built yet")
+	return 2
+}
+
+// known reports whether a loaded stack has this name.
+func known(stacks []stack.Stack, name string) bool {
+	for _, s := range stacks {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
 }

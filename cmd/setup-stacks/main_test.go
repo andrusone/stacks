@@ -112,33 +112,164 @@ func TestHelpEmptyFolder(t *testing.T) {
 	}
 }
 
-// The script is what the user runs, so its exit code must match run()'s: go run would turn 2 into 1.
-func TestScriptPassesExitCode(t *testing.T) {
-	cmd := exec.Command("bash", "../../setup-stacks.sh", "--apply")
-	var errb bytes.Buffer
-	cmd.Stderr = &errb
-	err := cmd.Run()
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
-		t.Fatalf("script --apply: err %v, want exit 2", err)
+// listTree returns every path under dir with its size, so a test can see that nothing changed.
+func listTree(t *testing.T, dir string) string {
+	t.Helper()
+	var b strings.Builder
+	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&b, "%s %d %v\n", p, info.Size(), info.IsDir())
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if errb.String() != "error: not built yet\n" {
-		t.Errorf("script stderr %q, want only the not-built line", errb.String())
+	return b.String()
+}
+
+// runWith runs the command with STACKS_DIR set to dir and returns the exit code and both outputs.
+func runWith(t *testing.T, dir string, argv ...string) (int, string, string) {
+	t.Helper()
+	t.Setenv("STACKS_DIR", dir)
+	var out, errb bytes.Buffer
+	code := run(argv, &out, &errb)
+	return code, out.String(), errb.String()
+}
+
+func TestNoArgsListsAndStops(t *testing.T) {
+	for _, withStack := range []bool{false, true} {
+		dir := t.TempDir()
+		if withStack {
+			writeStack(t, dir, "alpha", "first one")
+		}
+		before := listTree(t, dir)
+		code, out, errs := runWith(t, dir)
+		if code != 1 {
+			t.Errorf("stack=%v: exit %d, want 1", withStack, code)
+		}
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if lines[0] != "no stack was named" {
+			t.Errorf("stack=%v: first line %q, want the no-stack line", withStack, lines[0])
+		}
+		if lines[1] != "flags:" {
+			t.Errorf("stack=%v: second line %q, want the help", withStack, lines[1])
+		}
+		if withStack && !strings.Contains(out, "  alpha  first one") {
+			t.Errorf("stack=%v: help does not list alpha:\n%s", withStack, out)
+		}
+		if errs != "" {
+			t.Errorf("stack=%v: stderr %q, want empty", withStack, errs)
+		}
+		if after := listTree(t, dir); after != before {
+			t.Errorf("stack=%v: folder changed:\nbefore:\n%s\nafter:\n%s", withStack, before, after)
+		}
 	}
 }
 
-func TestOtherArgsNotBuilt(t *testing.T) {
-	cases := [][]string{{}, {"--apply"}, {"--stack", "x"}, {"--help", "x"}, {"--check"}}
-	for _, args := range cases {
-		var out, errb bytes.Buffer
-		if code := run(args, &out, &errb); code != 2 {
-			t.Errorf("args %q: exit %d, want 2", args, code)
+func TestUnknownStackListsAndStops(t *testing.T) {
+	for _, withStack := range []bool{false, true} {
+		dir := t.TempDir()
+		if withStack {
+			writeStack(t, dir, "alpha", "first one")
 		}
-		if errb.String() != "error: not built yet\n" {
-			t.Errorf("args %q: stderr %q", args, errb.String())
+		before := listTree(t, dir)
+		for _, argv := range [][]string{{"--stack", "nosuch"}, {"--stack", "nosuch", "--check"}} {
+			code, out, errs := runWith(t, dir, argv...)
+			if code != 1 {
+				t.Errorf("%q stack=%v: exit %d, want 1", argv, withStack, code)
+			}
+			lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+			if lines[0] != "unknown stack: nosuch" {
+				t.Errorf("%q stack=%v: first line %q", argv, withStack, lines[0])
+			}
+			if lines[1] != "flags:" {
+				t.Errorf("%q stack=%v: second line %q, want the help", argv, withStack, lines[1])
+			}
+			if withStack && !strings.Contains(out, "  alpha  first one") {
+				t.Errorf("%q stack=%v: help does not list alpha:\n%s", argv, withStack, out)
+			}
+			if errs != "" {
+				t.Errorf("%q stack=%v: stderr %q, want empty", argv, withStack, errs)
+			}
 		}
-		if out.Len() != 0 {
-			t.Errorf("args %q: stdout %q, want empty", args, out.String())
+		if after := listTree(t, dir); after != before {
+			t.Errorf("stack=%v: folder changed", withStack)
+		}
+	}
+}
+
+func TestConflictsExitTwoWithOneLine(t *testing.T) {
+	cases := []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"--check", "--apply", "--stack", "alpha"}, "--check and --apply conflict: pick one"},
+		{[]string{"--stack", "alpha", "--stack", "alpha"}, "--stack is given twice"},
+		{[]string{"--apply"}, "--apply needs --stack <name>"},
+		{[]string{"--stack"}, "--stack needs a stack name"},
+		{[]string{"--stack", "--apply"}, "--stack needs a stack name"},
+		{[]string{"--bogus"}, "unknown flag: --bogus"},
+		{[]string{"--help", "--apply", "--stack", "alpha"}, "--help is shown alone"},
+	}
+	dir := t.TempDir()
+	writeStack(t, dir, "alpha", "first one")
+	before := listTree(t, dir)
+	for _, c := range cases {
+		code, out, errs := runWith(t, dir, c.argv...)
+		if code != 2 {
+			t.Errorf("%q: exit %d, want 2", c.argv, code)
+		}
+		if out != "" {
+			t.Errorf("%q: stdout %q, want empty", c.argv, out)
+		}
+		if n := strings.Count(errs, "\n"); n != 1 || !strings.HasPrefix(errs, "error: ") || !strings.Contains(errs, c.want) {
+			t.Errorf("%q: stderr %q, want one error line containing %q", c.argv, errs, c.want)
+		}
+	}
+	if after := listTree(t, dir); after != before {
+		t.Errorf("folder changed")
+	}
+}
+
+func TestKnownStackOrCheckNotBuilt(t *testing.T) {
+	dir := t.TempDir()
+	writeStack(t, dir, "alpha", "first one")
+	for _, argv := range [][]string{{"--check"}, {"--stack", "alpha"}, {"--stack", "alpha", "--check"}} {
+		code, out, errs := runWith(t, dir, argv...)
+		if code != 2 {
+			t.Errorf("%q: exit %d, want 2", argv, code)
+		}
+		if errs != "error: not built yet\n" {
+			t.Errorf("%q: stderr %q, want only the not-built line", argv, errs)
+		}
+		if out != "" {
+			t.Errorf("%q: stdout %q, want empty", argv, out)
+		}
+	}
+}
+
+// The script is what the user runs, so its exit code must match run()'s: go run would turn 2 into 1.
+func TestScriptPassesExitCode(t *testing.T) {
+	cases := []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"--check"}, "error: not built yet\n"},
+		{[]string{"--apply"}, "--apply needs --stack <name>"},
+	}
+	for _, c := range cases {
+		cmd := exec.Command("bash", append([]string{"../../setup-stacks.sh"}, c.argv...)...)
+		var errb bytes.Buffer
+		cmd.Stderr = &errb
+		err := cmd.Run()
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+			t.Fatalf("script %q: err %v, want exit 2", c.argv, err)
+		}
+		if !strings.Contains(errb.String(), c.want) {
+			t.Errorf("script %q: stderr %q, want it to contain %q", c.argv, errb.String(), c.want)
 		}
 	}
 }
