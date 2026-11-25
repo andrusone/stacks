@@ -1,9 +1,38 @@
 #!/usr/bin/env bash
 # test stack @NAME@: the install step. plan or apply; anything else exits 1
 set -euo pipefail
+unit_dir="${STK_UNIT_DIR:-/etc/systemd/system}"
+unit="stk-@NAME@.service"
+path="$unit_dir/$unit"
+enabled() { command -v systemctl >/dev/null 2>&1 && systemctl is-enabled --quiet "$unit" 2>/dev/null; }
 case "${1:-}" in
-  plan) echo "would: install @NAME@" ;;
-  apply) echo "done: install @NAME@" ;;
+  plan)
+    n=0
+    if [ ! -e "$path" ]; then echo "would: write unit $path"; n=$((n + 1)); fi
+    if ! enabled; then echo "would: enable $unit"; n=$((n + 1)); fi
+    echo "changes: $n" ;;
+  apply)
+    n=0
+    if [ ! -e "$path" ]; then
+      sudo tee "$path" >/dev/null <<'UNIT'
+[Unit]
+Description=test stack @NAME@
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+      sudo systemctl daemon-reload
+      echo "done: write unit $path"; n=$((n + 1))
+    fi
+    if ! enabled; then
+      sudo systemctl enable --now "$unit"
+      echo "done: enable $unit"; n=$((n + 1))
+    fi
+    echo "changes: $n" ;;
   *) echo "error: install takes plan or apply" >&2; exit 1 ;;
 esac
-echo "changes: 1"
