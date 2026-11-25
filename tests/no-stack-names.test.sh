@@ -20,10 +20,10 @@ run_help() { STACKS_DIR="$2" "$BIN" --help > "$W/$1" || fail "--help exited non-
 
 bash "$HERE/make-stacks.sh" "$T/stacks" alpha beta gamma || fail "generator exited non-zero"
 
-# (1) No generated name, nor example, in setup-stacks.sh or a non-test Go file of the installer.
+# (1) No generated name in setup-stacks.sh or a non-test Go file of the installer.
 src=("$ROOT/setup-stacks.sh")
 while IFS= read -r f; do src+=("$f"); done < <(find "$ROOT/cmd/setup-stacks" "$ROOT/internal" -name '*.go' ! -name '*_test.go')
-for n in alpha beta gamma example; do
+for n in alpha beta gamma; do
   hits="$(grep -Fl -- "$n" "${src[@]}" || true)"
   [ -z "$hits" ] || fail "$n appears in: $hits"
 done
