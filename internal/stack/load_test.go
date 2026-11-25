@@ -187,6 +187,32 @@ func TestLoadParseError(t *testing.T) {
 	}
 }
 
+// TestLoadParseErrorOnLine checks the line and a non-empty message for parse
+// errors on line 2 (meaning): a missing value, and a string never closed.
+func TestLoadParseErrorOnLine(t *testing.T) {
+	cases := map[string]string{
+		"missing value":   `meaning = `,
+		"unclosed string": `meaning = "download client`,
+	}
+	for name, line := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "qbt", file)
+			writeStack(t, root, "qbt", fieldsText("meaning", line))
+
+			got := loadOnly(t, root)
+			prefix := path + ":2: "
+			if !strings.HasPrefix(got, prefix) {
+				t.Fatalf("got %q, want prefix %q", got, prefix)
+			}
+			msg := strings.TrimPrefix(got, prefix)
+			if msg == "" || strings.HasPrefix(msg, "toml:") {
+				t.Errorf("message %q, want the library's text", msg)
+			}
+		})
+	}
+}
+
 func TestLoadNameDiffersFromFolder(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "qbt", file)
