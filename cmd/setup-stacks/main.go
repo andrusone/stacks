@@ -51,9 +51,12 @@ func runWith(argv []string, stdout, stderr io.Writer, e env) int {
 		installer.Help(stdout, e.Stacks, stacks, errs)
 		return 1
 	}
-	if a.Check || a.Apply {
+	if a.Check {
 		fmt.Fprintln(stderr, "error: not built yet")
 		return 2
+	}
+	if a.Apply {
+		return applyRun(stdout, stderr, e, s)
 	}
 	return dryRun(stdout, stderr, e, s)
 }
