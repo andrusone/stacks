@@ -176,7 +176,7 @@ func TestUnknownStackListsAndStops(t *testing.T) {
 			writeStack(t, dir, "alpha", "first one")
 		}
 		before := listTree(t, dir)
-		for _, argv := range [][]string{{"--stack", "nosuch"}, {"--stack", "nosuch", "--check"}} {
+		for _, argv := range [][]string{{"--stack", "nosuch"}} {
 			code, out, errs := runDir(t, dir, argv...)
 			if code != 1 {
 				t.Errorf("%q stack=%v: exit %d, want 1", argv, withStack, code)
@@ -234,11 +234,11 @@ func TestConflictsExitTwoWithOneLine(t *testing.T) {
 	}
 }
 
-// --stack alone is the dry run now (dryrun_test.go); --apply and --check are still not built.
-func TestApplyOrCheckNotBuilt(t *testing.T) {
+// --stack alone is the dry run now (dryrun_test.go) and --check is built (checkrun_test.go); --apply is still not built.
+func TestApplyNotBuilt(t *testing.T) {
 	dir := t.TempDir()
 	writeStack(t, dir, "alpha", "first one")
-	for _, argv := range [][]string{{"--check"}, {"--stack", "alpha", "--apply"}, {"--stack", "alpha", "--check"}} {
+	for _, argv := range [][]string{{"--stack", "alpha", "--apply"}} {
 		code, out, errs := runDir(t, dir, argv...)
 		if code != 2 {
 			t.Errorf("%q: exit %d, want 2", argv, code)
@@ -258,8 +258,8 @@ func TestScriptPassesExitCode(t *testing.T) {
 		argv []string
 		want string
 	}{
-		{[]string{"--check"}, "error: not built yet\n"},
 		{[]string{"--apply"}, "--apply needs --stack <name>"},
+		{[]string{"--bogus"}, "unknown flag: --bogus"},
 	}
 	for _, c := range cases {
 		cmd := exec.Command("bash", append([]string{"../../setup-stacks.sh"}, c.argv...)...)

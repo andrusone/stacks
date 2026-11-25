@@ -46,12 +46,15 @@ func runWith(argv []string, stdout, stderr io.Writer, e env) int {
 		return 1
 	}
 	s, ok := find(stacks, a.Stack)
-	if a.Stack != "" && !ok {
+	if a.Stack != "" && !ok && !a.Check {
 		fmt.Fprintf(stdout, "unknown stack: %s\n", a.Stack)
 		installer.Help(stdout, e.Stacks, stacks, errs)
 		return 1
 	}
-	if a.Check || a.Apply {
+	if a.Check {
+		return checkRun(stdout, stderr, e, stacks, a.Stack)
+	}
+	if a.Apply {
 		fmt.Fprintln(stderr, "error: not built yet")
 		return 2
 	}
