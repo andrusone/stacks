@@ -129,12 +129,13 @@ func listTree(t *testing.T, dir string) string {
 	return b.String()
 }
 
-// runWith runs the command with STACKS_DIR set to dir and returns the exit code and both outputs.
-func runWith(t *testing.T, dir string, argv ...string) (int, string, string) {
+// runDir runs the command with dir as the stacks folder and a test env (testEnv) for every other path,
+// and returns the exit code and both outputs.
+func runDir(t *testing.T, dir string, argv ...string) (int, string, string) {
 	t.Helper()
-	t.Setenv("STACKS_DIR", dir)
+	e, _ := testEnv(t, dir)
 	var out, errb bytes.Buffer
-	code := run(argv, &out, &errb)
+	code := runWith(argv, &out, &errb, e)
 	return code, out.String(), errb.String()
 }
 
@@ -145,7 +146,7 @@ func TestNoArgsListsAndStops(t *testing.T) {
 			writeStack(t, dir, "alpha", "first one")
 		}
 		before := listTree(t, dir)
-		code, out, errs := runWith(t, dir)
+		code, out, errs := runDir(t, dir)
 		if code != 1 {
 			t.Errorf("stack=%v: exit %d, want 1", withStack, code)
 		}
@@ -176,7 +177,7 @@ func TestUnknownStackListsAndStops(t *testing.T) {
 		}
 		before := listTree(t, dir)
 		for _, argv := range [][]string{{"--stack", "nosuch"}, {"--stack", "nosuch", "--check"}} {
-			code, out, errs := runWith(t, dir, argv...)
+			code, out, errs := runDir(t, dir, argv...)
 			if code != 1 {
 				t.Errorf("%q stack=%v: exit %d, want 1", argv, withStack, code)
 			}
@@ -217,7 +218,7 @@ func TestConflictsExitTwoWithOneLine(t *testing.T) {
 	writeStack(t, dir, "alpha", "first one")
 	before := listTree(t, dir)
 	for _, c := range cases {
-		code, out, errs := runWith(t, dir, c.argv...)
+		code, out, errs := runDir(t, dir, c.argv...)
 		if code != 2 {
 			t.Errorf("%q: exit %d, want 2", c.argv, code)
 		}
@@ -233,11 +234,12 @@ func TestConflictsExitTwoWithOneLine(t *testing.T) {
 	}
 }
 
-func TestKnownStackOrCheckNotBuilt(t *testing.T) {
+// --stack alone is the dry run now (dryrun_test.go); --apply and --check are still not built.
+func TestApplyOrCheckNotBuilt(t *testing.T) {
 	dir := t.TempDir()
 	writeStack(t, dir, "alpha", "first one")
-	for _, argv := range [][]string{{"--check"}, {"--stack", "alpha"}, {"--stack", "alpha", "--check"}} {
-		code, out, errs := runWith(t, dir, argv...)
+	for _, argv := range [][]string{{"--check"}, {"--stack", "alpha", "--apply"}, {"--stack", "alpha", "--check"}} {
+		code, out, errs := runDir(t, dir, argv...)
 		if code != 2 {
 			t.Errorf("%q: exit %d, want 2", argv, code)
 		}
