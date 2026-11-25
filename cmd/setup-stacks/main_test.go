@@ -176,7 +176,7 @@ func TestUnknownStackListsAndStops(t *testing.T) {
 			writeStack(t, dir, "alpha", "first one")
 		}
 		before := listTree(t, dir)
-		for _, argv := range [][]string{{"--stack", "nosuch"}, {"--stack", "nosuch", "--check"}} {
+		for _, argv := range [][]string{{"--stack", "nosuch"}} {
 			code, out, errs := runDir(t, dir, argv...)
 			if code != 1 {
 				t.Errorf("%q stack=%v: exit %d, want 1", argv, withStack, code)
@@ -234,32 +234,14 @@ func TestConflictsExitTwoWithOneLine(t *testing.T) {
 	}
 }
 
-// --stack alone is the dry run now (dryrun_test.go); --apply and --check are still not built.
-func TestApplyOrCheckNotBuilt(t *testing.T) {
-	dir := t.TempDir()
-	writeStack(t, dir, "alpha", "first one")
-	for _, argv := range [][]string{{"--check"}, {"--stack", "alpha", "--apply"}, {"--stack", "alpha", "--check"}} {
-		code, out, errs := runDir(t, dir, argv...)
-		if code != 2 {
-			t.Errorf("%q: exit %d, want 2", argv, code)
-		}
-		if errs != "error: not built yet\n" {
-			t.Errorf("%q: stderr %q, want only the not-built line", argv, errs)
-		}
-		if out != "" {
-			t.Errorf("%q: stdout %q, want empty", argv, out)
-		}
-	}
-}
-
 // The script is what the user runs, so its exit code must match run()'s: go run would turn 2 into 1.
 func TestScriptPassesExitCode(t *testing.T) {
 	cases := []struct {
 		argv []string
 		want string
 	}{
-		{[]string{"--check"}, "error: not built yet\n"},
 		{[]string{"--apply"}, "--apply needs --stack <name>"},
+		{[]string{"--bogus"}, "unknown flag: --bogus"},
 	}
 	for _, c := range cases {
 		cmd := exec.Command("bash", append([]string{"../../setup-stacks.sh"}, c.argv...)...)

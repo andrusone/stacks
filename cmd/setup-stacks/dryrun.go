@@ -18,6 +18,7 @@ type env struct {
 	Cfg    installer.Config
 	Pre    installer.PreflightEnv
 	Exec   installer.Exec
+	Unit   func(unit string) (enabled, active bool)
 }
 
 // realEnv is this machine's paths (SI-FR-05, SI-FR-10): /svr, /var/lib/stacks, /etc/stacks, the clone
@@ -38,6 +39,7 @@ func realEnv(home string) env {
 			LockPath:      "/tmp/setup-stacks.lock",
 		},
 		Exec: realExec,
+		Unit: unitState,
 	}
 }
 

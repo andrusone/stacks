@@ -1,4 +1,4 @@
-// Command setup-stacks is the stacks installer (SI-FR-01, MVP 1 in ST280; ST283 lists the stacks; ST287 parses the flags; ST291 prints the dry run). Only --help, the flag errors, the stack checks and the dry run are built so far.
+// Command setup-stacks is the stacks installer (SI-FR-01, MVP 1 in ST280; ST283 lists the stacks; ST287 parses the flags; ST291 prints the dry run; ST292 --check; ST293 --apply). Only --help, the flag errors, the stack checks, the dry run, --check and --apply are built so far.
 package main
 
 import (
@@ -46,14 +46,13 @@ func runWith(argv []string, stdout, stderr io.Writer, e env) int {
 		return 1
 	}
 	s, ok := find(stacks, a.Stack)
-	if a.Stack != "" && !ok {
+	if a.Stack != "" && !ok && !a.Check {
 		fmt.Fprintf(stdout, "unknown stack: %s\n", a.Stack)
 		installer.Help(stdout, e.Stacks, stacks, errs)
 		return 1
 	}
 	if a.Check {
-		fmt.Fprintln(stderr, "error: not built yet")
-		return 2
+		return checkRun(stdout, stderr, e, stacks, a.Stack)
 	}
 	if a.Apply {
 		return applyRun(stdout, stderr, e, s)
